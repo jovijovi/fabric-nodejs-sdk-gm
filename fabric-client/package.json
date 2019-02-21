@@ -5,8 +5,8 @@
     "hyperledger",
     "blockchain"
   ],
-  "version": "1.4.0-rc2",
-  "tag": "rc2",
+  "version": "1.4.1-snapshot",
+  "tag": "unstable-1.4",
   "main": "index.js",
   "scripts": {
     "test": "nyc mocha --exclude 'test/data/**/*.js' --recursive  -t 10000"
@@ -26,7 +26,7 @@
     "callsite": "^1.0.0",
     "elliptic": "^6.2.3",
     "fs-extra": "^6.0.1",
-    "grpc": "1.14.2",
+    "grpc": "1.17.0",
     "hoek": "^4.2.1",
     "ignore-walk": "^3.0.0",
     "js-sha3": "^0.7.0",

@@ -73,7 +73,7 @@ const Client = class extends BaseClient {
 
 	constructor() {
 		super();
-		this._mspid = null; // The mspid id and the organization id
+		this._clientConfigMspid = null; // MSP ID of the organization specified in the client section of the connection profile
 
 		this._stateStore = null;
 		this._userContext = null;
@@ -302,29 +302,30 @@ const Client = class extends BaseClient {
 
 		if (channel) {
 			return channel;
+		}
+
+		// maybe it is defined in the network
+		if (this._network_config) {
+			if (!name) {
+				const channel_names = Object.keys(this._network_config._network_config.channels);
+				name = channel_names[0];
+			}
+			if (name) {
+				channel = this._network_config.getChannel(name);
+			}
+		}
+		if (channel) {
+			this._channels.set(name, channel);
+			return channel;
+		}
+
+		const errorMessage = `Channel not found for name ${name}`;
+		if (throwError) {
+			logger.error(errorMessage);
+			throw new Error(errorMessage);
 		} else {
-			// maybe it is defined in the network
-			if (this._network_config) {
-				if (!name) {
-					const channel_names = Object.keys(this._network_config._network_config.channels);
-					name = channel_names[0];
-				}
-				if (name) {
-					channel = this._network_config.getChannel(name);
-				}
-			}
-			if (channel) {
-				this._channels.set(name, channel);
-				return channel;
-			}
-
-			logger.error(`Channel not found for name ${name}`);
-
-			if (throwError) {
-				throw new Error(`Channel not found for name ${name}.`);
-			} else {
-				return null;
-			}
+			logger.debug(errorMessage);
+			return null;
 		}
 	}
 
@@ -396,7 +397,7 @@ const Client = class extends BaseClient {
 	getPeersForOrg(mspid) {
 		let _mspid = mspid;
 		if (!mspid) {
-			_mspid = this._mspid;
+			_mspid = this.getMspid();
 		}
 		if (_mspid && this._network_config) {
 			const organization = this._network_config.getOrganizationByMspId(_mspid);
@@ -466,7 +467,7 @@ const Client = class extends BaseClient {
 		const temp_peers = {};
 		for (const i in channel_names) {
 			const channel = this.getChannel(channel_names[i]);
-			const channel_peers = channel.getPeersForOrg(this._mspid);
+			const channel_peers = channel.getPeersForOrg();
 			for (const j in channel_peers) {
 				const peer = channel_peers[j];
 				temp_peers[peer.getName()] = peer; // will remove duplicates
@@ -579,7 +580,9 @@ const Client = class extends BaseClient {
 	 *          section of the loaded common connection profile
 	 */
 	getMspid() {
-		return this._mspid;
+		const user = this._userContext;
+		const identity = (user && user.getIdentity());
+		return (identity && identity.getMSPId()) || this._clientConfigMspid;
 	}
 
 
@@ -1330,7 +1333,7 @@ const Client = class extends BaseClient {
 		if (client_config && client_config.organization) {
 			const organization_config = this._network_config.getOrganization(client_config.organization, true);
 			if (organization_config) {
-				this._mspid = organization_config.getMspid();
+				this._clientConfigMspid = organization_config.getMspid();
 			}
 		}
 	}
@@ -1487,7 +1490,7 @@ const Client = class extends BaseClient {
 			throw new Error('Cannot save null userContext.');
 		}
 
-		if (user instanceof User) {
+		if (user && user.constructor && user.constructor.name === 'User') {
 			this._userContext = user;
 			if (!skipPersistence) {
 				logger.debug('setUserContext - begin promise to saveUserToStateStore');

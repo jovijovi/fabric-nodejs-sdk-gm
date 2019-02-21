@@ -1,8 +1,16 @@
 /*
-# Copyright IBM Corp. All Rights Reserved.
-#
-# SPDX-License-Identifier: Apache-2.0
-*/
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 'use strict';
 
@@ -11,8 +19,10 @@ const rewire = require('rewire');
 const Client = rewire('../lib/Client');
 const NetworkConfig = require('../lib/impl/NetworkConfig_1_0');
 const fs = require('fs');
+const {Identity} = require('../lib/msp/identity');
 const Package = require('../lib/Package');
 const path = require('path');
+const User = require('../lib/User');
 
 const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
@@ -20,66 +30,84 @@ const sinon = require('sinon');
 const should = chai.should();
 chai.use(chaiAsPromised);
 
-function propertiesToBeEqual(obj, properties, value) {
-	properties.forEach((prop) => {
-		if (obj.hasOwnProperty(prop)) {
-			should.equal(obj[prop], value);
-		} else {
-			should.fail();
-		}
-	});
-}
-
-function propertiesToBeNull(obj, properties) {
-	return propertiesToBeEqual(obj, properties, null);
-}
-
-function propertiesToBeInstanceOf(obj, properties, clazz) {
-	properties.forEach((prop) => {
-		if (obj.hasOwnProperty(prop)) {
-			obj[prop].should.be.instanceof(clazz);
-		} else {
-			should.fail();
-		}
-	});
-}
-
 describe('Client', () => {
-	let sandbox;
 	let revert;
 	let FakeLogger;
+	let connectionProfile;
+	const userMspId = 'UserMspId';
+	let fakeUser;
+
+	beforeEach(() => {
+	});
+
 
 	beforeEach(() => {
 		revert = [];
-		sandbox = sinon.createSandbox();
 
 		FakeLogger = {
 			debug: () => { },
 			error: () => { }
 		};
-		sandbox.stub(FakeLogger);
+		sinon.stub(FakeLogger);
 		revert.push(Client.__set__('logger', FakeLogger));
+
+		const certificate = 'FAKE_CERTIFICATE';
+		const publicKey = 'FAKE_PUBLIC_KEY';
+		const cryptoSuite = {_name: 'FAKE_CRYPTO_SUITE'};
+		const identity = new Identity(certificate, publicKey, userMspId, cryptoSuite);
+		fakeUser = new User({name:'user'});
+
+		const fakeGetIdentity = sinon.fake(() => identity);
+		sinon.replace(fakeUser, 'getIdentity', fakeGetIdentity);
+
+		connectionProfile = {
+			name: 'global-trade-network',
+			description: 'The network to be in if you want to stay in the global trade business',
+			version: '1.0',
+			client: {
+				organization: 'ClientOrg'
+			},
+			organizations: {
+				ClientOrg: {
+					mspid: 'ClientMspId',
+					peers: [
+						'peer0.clientorg.example.com'
+					]
+				},
+				UserOrg: {
+					mspid: userMspId,
+					peers: [
+						'peer0.userorg.example.com'
+					]
+				}
+			},
+			peers: {
+				'peer0.clientorg.example.com': {
+					url: 'grpcs://localhost:7051',
+					tlsCACerts: {
+						pem: 'FAKE_CLIENT_ORG_CERTIFICATE'
+					}
+				},
+				'peer0.userorg.example.com': {
+					url: 'grpcs://localhost:7052',
+					tlsCACerts: {
+						pem: 'FAKE_USER_ORG_CERTIFICATE'
+					}
+				}
+			}
+		};
 	});
 
 	afterEach(() => {
 		if (revert.length) {
 			revert.forEach(Function.prototype.call, Function.prototype.call);
 		}
-		sandbox.restore();
-	});
-
-	describe('#constructor', () => {
-		it('should define the correct properties', () => {
-			const client = new Client();
-			propertiesToBeNull(client, ['_mspid', '_stateStore', '_network_config', '_adminSigningIdentity']);
-			propertiesToBeInstanceOf(client, ['_msps', '_organizations', '_certificateAuthorities', '_channels'], Map);
-			client._tls_mutual.should.deep.equal({});
-		});
+		sinon.restore();
 	});
 
 	describe('loadFromConfig', () => {
 		it('should create a Client instance and call loadFromConfig', () => {
-			const loadConfigStub = sandbox.stub();
+			const loadConfigStub = sinon.stub();
 			revert.push(Client.__set__('Client.prototype.loadFromConfig', loadConfigStub));
 			const client = Client.loadFromConfig('config');
 			sinon.assert.calledWith(loadConfigStub, 'config');
@@ -98,14 +126,14 @@ describe('Client', () => {
 		beforeEach(() => {
 			mock_network_config = sinon.createStubInstance(NetworkConfig);
 
-			_getNetworkConfigStub = sandbox.stub().returns(mock_network_config);
+			_getNetworkConfigStub = sinon.stub().returns(mock_network_config);
 			revert.push(Client.__set__('_getNetworkConfig', _getNetworkConfigStub));
 
 			client = new Client();
 
-			_setAdminFromConfigStub = sandbox.stub(client, '_setAdminFromConfig');
-			_setMspidFromConfigStub = sandbox.stub(client, '_setMspidFromConfig');
-			_addConnectionOptionsFromConfig = sandbox.stub(client, '_addConnectionOptionsFromConfig');
+			_setAdminFromConfigStub = sinon.stub(client, '_setAdminFromConfig');
+			_setMspidFromConfigStub = sinon.stub(client, '_setMspidFromConfig');
+			_addConnectionOptionsFromConfig = sinon.stub(client, '_addConnectionOptionsFromConfig');
 		});
 
 		it('should get additional network config and set _network_config to it', () => {
@@ -146,12 +174,12 @@ describe('Client', () => {
 		let client;
 
 		beforeEach(() => {
-			toBytesStub = sandbox.stub();
-			generateX509CertificateStub = sandbox.stub();
-			generateEphemeralKeyStub = sandbox.stub().returns({toBytes: toBytesStub, generateX509Certificate: generateX509CertificateStub});
-			newCryptoSuiteStub = sandbox.stub().returns({generateEphemeralKey: generateEphemeralKeyStub});
+			toBytesStub = sinon.stub();
+			generateX509CertificateStub = sinon.stub();
+			generateEphemeralKeyStub = sinon.stub().returns({toBytes: toBytesStub, generateX509Certificate: generateX509CertificateStub});
+			newCryptoSuiteStub = sinon.stub().returns({generateEphemeralKey: generateEphemeralKeyStub});
 			revert.push(Client.__set__('Client.newCryptoSuite', newCryptoSuiteStub));
-			getNameStub = sandbox.stub();
+			getNameStub = sinon.stub();
 
 			client = new Client();
 		});
@@ -203,12 +231,12 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			toBytesStub = sandbox.stub();
-			generateX509CertificateStub = sandbox.stub();
-			generateEphemeralKeyStub = sandbox.stub().returns({toBytes: toBytesStub, generateX509Certificate: generateX509CertificateStub});
-			newCryptoSuiteStub = sandbox.stub().returns({generateEphemeralKey: generateEphemeralKeyStub});
+			toBytesStub = sinon.stub();
+			generateX509CertificateStub = sinon.stub();
+			generateEphemeralKeyStub = sinon.stub().returns({toBytes: toBytesStub, generateX509Certificate: generateX509CertificateStub});
+			newCryptoSuiteStub = sinon.stub().returns({generateEphemeralKey: generateEphemeralKeyStub});
 			revert.push(Client.__set__('Client.newCryptoSuite', newCryptoSuiteStub));
-			getNameStub = sandbox.stub();
+			getNameStub = sinon.stub();
 
 			client = new Client();
 		});
@@ -295,9 +323,9 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getStub = sandbox.stub();
-			setStub = sandbox.stub();
-			channelStub = sandbox.stub();
+			getStub = sinon.stub();
+			setStub = sinon.stub();
+			channelStub = sinon.stub();
 			client = new Client();
 			client._channels = {get: getStub, set: setStub};
 
@@ -328,10 +356,10 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getStub = sandbox.stub();
-			setStub = sandbox.stub();
-			valuesStub = sandbox.stub();
-			nextStub = sandbox.stub();
+			getStub = sinon.stub();
+			setStub = sinon.stub();
+			valuesStub = sinon.stub();
+			nextStub = sinon.stub();
 			client = new Client();
 			client._channels = {get: getStub, set: setStub, values: valuesStub.returns({next: nextStub}), size: 1};
 		});
@@ -353,7 +381,7 @@ describe('Client', () => {
 
 		it('should check the _network_config if no channel is returned and return the discovered channel', () => {
 			client._channels.size = 0;
-			const getChannelStub = sandbox.stub().returns('channel');
+			const getChannelStub = sinon.stub().returns('channel');
 			client._network_config = {_network_config: {channels: {'channel1': {}}}, getChannel: getChannelStub};
 			const channel = client.getChannel(null, false);
 			sinon.assert.calledWith(getChannelStub, 'channel1');
@@ -362,7 +390,7 @@ describe('Client', () => {
 
 		it('should return null as channel does not exist', () => {
 			client._channels.size = 0;
-			const getChannelStub = sandbox.stub();
+			const getChannelStub = sinon.stub();
 			client._network_config = {_network_config: {channels: {}}, getChannel: getChannelStub};
 			const channel = client.getChannel('channel1', false);
 			sinon.assert.calledWith(getChannelStub, 'channel1');
@@ -382,10 +410,10 @@ describe('Client', () => {
 			should.equal(channel, null);
 		});
 
-		it('should call logger.error and return null if errors are turned off', () => {
+		it('should call logger.debug and return null if errors are turned off', () => {
 			client._channels.size = 0;
 			const channel = client.getChannel('channel1', false);
-			sinon.assert.calledWith(FakeLogger.error, 'Channel not found for name channel1');
+			sinon.assert.calledWith(FakeLogger.debug, 'Channel not found for name channel1');
 			should.equal(channel, null);
 		});
 
@@ -400,7 +428,7 @@ describe('Client', () => {
 
 	describe('#newPeer', () => {
 		it('should create and return a new peer instance', () => {
-			const peerStub = sandbox.stub();
+			const peerStub = sinon.stub();
 			revert.push(Client.__set__('Peer', peerStub));
 			const client = new Client();
 			client._buildConnectionOptions = (value) => value;
@@ -415,7 +443,7 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getPeerStub = sandbox.stub();
+			getPeerStub = sinon.stub();
 			client = new Client();
 		});
 
@@ -434,50 +462,58 @@ describe('Client', () => {
 	});
 
 	describe('#getPeersForOrg', () => {
-		let getPeersStub;
-		let getOrganizationByMspIdstub;
+		it('returns peers for specified org', () => {
+			const clientOrg = connectionProfile.client.organization;
+			const mspId = connectionProfile.organizations[clientOrg].mspid;
+			const orgPeerNames = connectionProfile.organizations[clientOrg].peers;
+			const client = Client.loadFromConfig(connectionProfile);
 
-		let client;
-		beforeEach(() => {
-			getPeersStub = sandbox.stub();
-			getOrganizationByMspIdstub = sandbox.stub().returns({getPeers: getPeersStub});
-			client = new Client();
+			const peers = client.getPeersForOrg(mspId);
+
+			const peerNames = peers.map((peer) => peer.getName());
+			peerNames.should.deep.equal(orgPeerNames);
 		});
 
-		it('should return a list of peers tied to an organisation when given an mspid', () => {
-			client._network_config = {getOrganizationByMspId: getOrganizationByMspIdstub};
-			getPeersStub.returns(['peer1']);
-			const peers = client.getPeersForOrg(1);
-			peers.should.deep.equal(['peer1']);
-			sinon.assert.calledWith(getOrganizationByMspIdstub, 1);
-		});
+		it('returns peers for client org in connection profile if no org specified', () => {
+			const clientOrg = connectionProfile.client.organization;
+			const orgPeerNames = connectionProfile.organizations[clientOrg].peers;
+			const client = Client.loadFromConfig(connectionProfile);
 
-		it('should return a list of peers tied to an organisation when mspid given in client', () => {
-			client._network_config = {getOrganizationByMspId: getOrganizationByMspIdstub};
-			client._mspid = 1;
-			getPeersStub.returns(['peer1']);
 			const peers = client.getPeersForOrg();
-			peers.should.deep.equal(['peer1']);
-			sinon.assert.calledWith(getOrganizationByMspIdstub, 1);
+
+			const peerNames = peers.map((peer) => peer.getName());
+			peerNames.should.deep.equal(orgPeerNames);
 		});
 
-		it('should return an empty list if no mspid is present', () => {
+		it('returns empty list if no org specified and no mspid present', () => {
+			const client = new Client();
 			const peers = client.getPeersForOrg();
-			peers.should.deep.equal([]);
+			peers.should.be.empty;
 		});
 
-		it('should return an empty list if organisation is not found', () => {
-			getOrganizationByMspIdstub.returns(null);
-			client._network_config = {getOrganizationByMspId: getOrganizationByMspIdstub};
-			const peers = client.getPeersForOrg(1);
-			peers.should.deep.equal([]);
-			sinon.assert.calledWith(getOrganizationByMspIdstub, 1);
+		it('returns empty list if organisation not in config', () => {
+			const client = Client.loadFromConfig(connectionProfile);
+			const peers = client.getPeersForOrg('NON_EXISTENT_MSP_ID');
+			peers.should.be.empty;
+		});
+
+		it('returns peers for user context MSP ID if no org specified and no client org in connection profile', () => {
+			delete connectionProfile.client;
+			const userOrg = Object.values(connectionProfile.organizations).find((org) => org.mspid === userMspId);
+			const userPeerNames = userOrg.peers;
+			const client = Client.loadFromConfig(connectionProfile);
+			client.setUserContext(fakeUser, true);
+
+			const peers = client.getPeersForOrg();
+
+			const peerNames = peers.map((peer) => peer.getName());
+			peerNames.should.deep.equal(userPeerNames);
 		});
 	});
 
 	describe('#newOrderer', () => {
 		it('should create and return a new peer instance', () => {
-			const ordererStub = sandbox.stub();
+			const ordererStub = sinon.stub();
 			revert.push(Client.__set__('Orderer', ordererStub));
 			const client = new Client();
 			client._buildConnectionOptions = (value) => value;
@@ -492,7 +528,7 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getOrdererStub = sandbox.stub();
+			getOrdererStub = sinon.stub();
 			client = new Client();
 		});
 
@@ -517,9 +553,9 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getChannelStub = sandbox.stub();
-			getPeersForOrgStub = sandbox.stub().returns([]);
-			getNameStub = sandbox.stub();
+			getChannelStub = sinon.stub();
+			getPeersForOrgStub = sinon.stub().returns([]);
+			getNameStub = sinon.stub();
 			client = new Client();
 			client._mspid = 1;
 			client.getChannel = getChannelStub;
@@ -532,7 +568,6 @@ describe('Client', () => {
 			getPeersForOrgStub.returns([{getName: getNameStub}]);
 			const orgPeers = client.getPeersForOrgOnChannel(['channel1']);
 			sinon.assert.calledWith(getChannelStub, 'channel1');
-			sinon.assert.calledWith(getPeersForOrgStub, 1);
 			sinon.assert.calledOnce(getNameStub);
 			orgPeers.should.deep.equal([{getName: getNameStub}]);
 		});
@@ -543,7 +578,6 @@ describe('Client', () => {
 			getPeersForOrgStub.returns([{getName: getNameStub}]);
 			const orgPeers = client.getPeersForOrgOnChannel('channel1');
 			sinon.assert.calledWith(getChannelStub, 'channel1');
-			sinon.assert.calledWith(getPeersForOrgStub, 1);
 			sinon.assert.calledOnce(getNameStub);
 			orgPeers.should.deep.equal([{getName: getNameStub}]);
 		});
@@ -559,12 +593,12 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getCertificateAuthorityStub = sandbox.stub();
-			getClientConfigStub = sandbox.stub();
-			getOrganizationStub = sandbox.stub();
-			getCertificateAuthoritiesStub = sandbox.stub();
-			_buildCAfromConfigStub = sandbox.stub();
-			setFabricCAServicesStub = sandbox.stub();
+			getCertificateAuthorityStub = sinon.stub();
+			getClientConfigStub = sinon.stub();
+			getOrganizationStub = sinon.stub();
+			getCertificateAuthoritiesStub = sinon.stub();
+			_buildCAfromConfigStub = sinon.stub();
+			setFabricCAServicesStub = sinon.stub();
 			revert.push(Client.__set__('Client.prototype._buildCAfromConfig', _buildCAfromConfigStub));
 			client = new Client();
 		});
@@ -653,14 +687,14 @@ describe('Client', () => {
 		let client;
 		let caInfo;
 		beforeEach(() => {
-			getTlsCACertsStub = sandbox.stub();
-			getConnectionOptionsStub = sandbox.stub();
-			getUrlStub = sandbox.stub();
-			getCaNameStub = sandbox.stub();
-			getConfigSettingStub = sandbox.stub();
+			getTlsCACertsStub = sinon.stub();
+			getConnectionOptionsStub = sinon.stub();
+			getUrlStub = sinon.stub();
+			getCaNameStub = sinon.stub();
+			getConfigSettingStub = sinon.stub();
 			revert.push(Client.__set__('Client.getConfigSetting', getConfigSettingStub));
-			requireStub = sandbox.stub();
-			caServiceStub = sandbox.stub();
+			requireStub = sinon.stub();
+			caServiceStub = sinon.stub();
 			revert.push(Client.__set__('require', requireStub.returns(caServiceStub)));
 			caInfo = {
 				getTlsCACerts: getTlsCACertsStub,
@@ -700,8 +734,8 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			hasClientStub = sandbox.stub();
-			getClientConfigStub = sandbox.stub();
+			hasClientStub = sinon.stub();
+			getClientConfigStub = sinon.stub();
 
 			client = new Client();
 		});
@@ -723,10 +757,36 @@ describe('Client', () => {
 	});
 
 	describe('#getMspid', () => {
-		it('should return _mspid', () => {
+		it('MSP ID initially unset', () => {
 			const client = new Client();
-			client._mspid = 'mspid';
-			client.getMspid().should.equal('mspid');
+			const actual = client.getMspid();
+			should.not.exist(actual);
+		});
+
+		it('MSP ID of the org in the client section of the connection profile if loaded from config', () => {
+			const clientOrg = connectionProfile.client.organization;
+			const expected = connectionProfile.organizations[clientOrg].mspid;
+
+			const client = Client.loadFromConfig(connectionProfile);
+			const actual = client.getMspid();
+
+			actual.should.equal(expected);
+		});
+
+		it('MSP ID of the user context if set', () => {
+			const client = new Client();
+			client.setUserContext(fakeUser, true);
+			const actual = client.getMspid();
+
+			actual.should.equal(userMspId);
+		});
+
+		it('MSP ID of the user context in preference to value from connection profile', () => {
+			const client = Client.loadFromConfig(connectionProfile);
+			client.setUserContext(fakeUser, true);
+			const actual = client.getMspid();
+
+			actual.should.equal(userMspId);
 		});
 	});
 
@@ -736,8 +796,8 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			_getSigningIdentityStub = sandbox.stub().returns('signing-identity');
-			TransactionIDStub = sandbox.stub();
+			_getSigningIdentityStub = sinon.stub().returns('signing-identity');
+			TransactionIDStub = sinon.stub();
 			revert.push(Client.__set__('TransactionID', TransactionIDStub));
 			client = new Client();
 			client._getSigningIdentity = _getSigningIdentityStub;
@@ -785,13 +845,13 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			envelopeDecodeStub = sandbox.stub();
-			payloadDecodeStub = sandbox.stub();
-			configUpdateEnvelopeDecodeStub = sandbox.stub();
-			getPayloadStub = sandbox.stub();
-			toBufferStub = sandbox.stub();
-			getDataStub = sandbox.stub();
-			getConfigUpdateStub = sandbox.stub();
+			envelopeDecodeStub = sinon.stub();
+			payloadDecodeStub = sinon.stub();
+			configUpdateEnvelopeDecodeStub = sinon.stub();
+			getPayloadStub = sinon.stub();
+			toBufferStub = sinon.stub();
+			getDataStub = sinon.stub();
+			getConfigUpdateStub = sinon.stub();
 
 			envelopeDecodeStub.returns({getPayload: getPayloadStub});
 			getPayloadStub.returns({toBuffer: toBufferStub});
@@ -837,24 +897,24 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			_getSigningIdentityStub = sandbox.stub();
-			SignatureHeaderStub = sandbox.stub();
+			_getSigningIdentityStub = sinon.stub();
+			SignatureHeaderStub = sinon.stub();
 			revert.push(Client.__set__('_commonProto.SignatureHeader', SignatureHeaderStub));
-			setCreatorStub = sandbox.stub();
-			serializeStub = sandbox.stub();
-			setNonceStub = sandbox.stub();
-			getNonceStub = sandbox.stub();
+			setCreatorStub = sinon.stub();
+			serializeStub = sinon.stub();
+			setNonceStub = sinon.stub();
+			getNonceStub = sinon.stub();
 			revert.push(Client.__set__('sdkUtils.getNonce', getNonceStub));
-			toBufferStub = sandbox.stub();
-			bufferConcatStub = sandbox.stub();
-			bufferFromStub = sandbox.stub();
-			bufferIsBufferStub = sandbox.stub();
-			signStub = sandbox.stub();
+			toBufferStub = sinon.stub();
+			bufferConcatStub = sinon.stub();
+			bufferFromStub = sinon.stub();
+			bufferIsBufferStub = sinon.stub();
+			signStub = sinon.stub();
 			revert.push(Client.__set__('Buffer', {concat: bufferConcatStub, from: bufferFromStub, isBuffer: bufferIsBufferStub}));
-			ConfigSignatureStub = sandbox.stub();
+			ConfigSignatureStub = sinon.stub();
 			revert.push(Client.__set__('_configtxProto.ConfigSignature', ConfigSignatureStub));
-			setSignatureHeaderStub = sandbox.stub();
-			setSignatureStub = sandbox.stub();
+			setSignatureHeaderStub = sinon.stub();
+			setSignatureStub = sinon.stub();
 
 			serializeStub.returns('creator');
 			getNonceStub.returns('nonce');
@@ -908,7 +968,7 @@ describe('Client', () => {
 
 	describe('#createChannel', () => {
 		it('should create a new channel', () => {
-			const _createOrUpdateChannelStub = sandbox.stub().returns('channel');
+			const _createOrUpdateChannelStub = sinon.stub().returns('channel');
 			const client = new Client();
 			client._createOrUpdateChannel = _createOrUpdateChannelStub;
 
@@ -921,7 +981,7 @@ describe('Client', () => {
 
 	describe('#updateChannel', () => {
 		it('should update an existing channel', () => {
-			const _createOrUpdateChannelStub = sandbox.stub().returns('channel');
+			const _createOrUpdateChannelStub = sinon.stub().returns('channel');
 			const client = new Client();
 			client._createOrUpdateChannel = _createOrUpdateChannelStub;
 
@@ -957,26 +1017,26 @@ describe('Client', () => {
 		let client;
 		const orderer = {};
 		beforeEach(() => {
-			signStub = sandbox.stub().returns('signature');
-			_getSigningIdentityStub = sandbox.stub().returns({sign: signStub});
-			getTargetOrdererStub = sandbox.stub();
-			sendBroadcastStub = sandbox.stub();
-			envelopeDecodeStub = sandbox.stub();
-			setHeaderStub = sandbox.stub();
-			setDataStub = sandbox.stub();
-			payloadStub = sandbox.stub();
-			toBufferStub = sandbox.stub();
+			signStub = sinon.stub().returns('signature');
+			_getSigningIdentityStub = sinon.stub().returns({sign: signStub});
+			getTargetOrdererStub = sinon.stub();
+			sendBroadcastStub = sinon.stub();
+			envelopeDecodeStub = sinon.stub();
+			setHeaderStub = sinon.stub();
+			setDataStub = sinon.stub();
+			payloadStub = sinon.stub();
+			toBufferStub = sinon.stub();
 			payloadStub.returns({setHeader: setHeaderStub, setData: setDataStub, toBuffer: toBufferStub});
-			isAdminStub = sandbox.stub().returns(true);
-			getTransactionIDStub = sandbox.stub();
-			getNonceStub = sandbox.stub().returns('nonce');
+			isAdminStub = sinon.stub().returns(true);
+			getTransactionIDStub = sinon.stub();
+			getNonceStub = sinon.stub().returns('nonce');
 			txIdStub = {getTransactionID: getTransactionIDStub, isAdmin: isAdminStub, getNonce: getNonceStub};
-			buildChannelHeaderStub = sandbox.stub();
-			buildHeaderStub = sandbox.stub().returns('header');
-			ConfigUpdateEnvelopeStub = sandbox.stub();
-			setConfigUpdateStub = sandbox.stub();
-			_stringToSignatureStub = sandbox.stub().returns('signatures');
-			setSignaturesStub = sandbox.stub();
+			buildChannelHeaderStub = sinon.stub();
+			buildHeaderStub = sinon.stub().returns('header');
+			ConfigUpdateEnvelopeStub = sinon.stub();
+			setConfigUpdateStub = sinon.stub();
+			_stringToSignatureStub = sinon.stub().returns('signatures');
+			setSignaturesStub = sinon.stub();
 			ConfigUpdateEnvelopeStub.returns({setConfigUpdate: setConfigUpdateStub, setSignatures: setSignaturesStub, toBuffer: toBufferStub});
 
 			revert.push(Client.__set__('_stringToSignature', _stringToSignatureStub));
@@ -1084,10 +1144,10 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getTargetPeersStub = sandbox.stub();
-			ChannelStub = sandbox.stub();
+			getTargetPeersStub = sinon.stub();
+			ChannelStub = sinon.stub();
 			revert.push(Client.__set__('Channel', ChannelStub));
-			_discoverStub = sandbox.stub();
+			_discoverStub = sinon.stub();
 			revert.push(Client.__set__('Client.prototype._discover', _discoverStub));
 
 			client = new Client();
@@ -1161,12 +1221,12 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			_getSigningIdentityStub = sandbox.stub();
-			getTargetPeersStub = sandbox.stub();
+			_getSigningIdentityStub = sinon.stub();
+			getTargetPeersStub = sinon.stub();
 			getTargetPeersStub.returns(['peer']);
-			transactionIDStub = sandbox.stub();
-			sendTransactionProposalStub = sandbox.stub();
-			ChannelQueryResponseDecodeStub = sandbox.stub();
+			transactionIDStub = sinon.stub();
+			sendTransactionProposalStub = sinon.stub();
+			ChannelQueryResponseDecodeStub = sinon.stub();
 			ChannelQueryResponseDecodeStub.returns({channels: [{channel_id: 1}]});
 
 			revert.push(Client.__set__('_queryProto.ChannelQueryResponse.decode', ChannelQueryResponseDecodeStub));
@@ -1318,12 +1378,12 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			_getSigningIdentityStub = sandbox.stub();
-			getTargetPeersStub = sandbox.stub();
+			_getSigningIdentityStub = sinon.stub();
+			getTargetPeersStub = sinon.stub();
 			getTargetPeersStub.returns(['peer']);
-			transactionIDStub = sandbox.stub();
-			sendTransactionProposalStub = sandbox.stub();
-			ChaincodeQueryResponseDecodeStub = sandbox.stub();
+			transactionIDStub = sinon.stub();
+			sendTransactionProposalStub = sinon.stub();
+			ChaincodeQueryResponseDecodeStub = sinon.stub();
 			ChaincodeQueryResponseDecodeStub.returns({chaincodes: [{name: 'chaincode1', version: 1, path: 'path'}]});
 
 			revert.push(Client.__set__('_queryProto.ChaincodeQueryResponse.decode', ChaincodeQueryResponseDecodeStub));
@@ -1489,25 +1549,25 @@ describe('Client', () => {
 		let client;
 		beforeEach(async () => {
 			smartContractPackage = await Package.fromBuffer(smartContractPackageBytes);
-			getPeersForOrgOnChannelStub = sandbox.stub();
-			getTargetPeersStub = sandbox.stub();
-			_getSigningIdentityStub = sandbox.stub().returns('signer');
-			getNonceStub = sandbox.stub().returns('nonce');
-			isAdminStub = sandbox.stub().returns(true);
-			getTransactionIDStub = sandbox.stub().returns('txId');
-			TransactionIDStub = sandbox.stub().returns({isAdmin: isAdminStub, getTransactionID: getTransactionIDStub, getNonce: getNonceStub});
+			getPeersForOrgOnChannelStub = sinon.stub();
+			getTargetPeersStub = sinon.stub();
+			_getSigningIdentityStub = sinon.stub().returns('signer');
+			getNonceStub = sinon.stub().returns('nonce');
+			isAdminStub = sinon.stub().returns(true);
+			getTransactionIDStub = sinon.stub().returns('txId');
+			TransactionIDStub = sinon.stub().returns({isAdmin: isAdminStub, getTransactionID: getTransactionIDStub, getNonce: getNonceStub});
 			revert.push(Client.__set__('TransactionID', TransactionIDStub));
-			buildChannelHeaderStub = sandbox.stub().returns('channel-header');
+			buildChannelHeaderStub = sinon.stub().returns('channel-header');
 			revert.push(Client.__set__('clientUtils.buildChannelHeader', buildChannelHeaderStub));
-			buildHeaderStub = sandbox.stub().returns('header');
+			buildHeaderStub = sinon.stub().returns('header');
 			revert.push(Client.__set__('clientUtils.buildHeader', buildHeaderStub));
-			buildProposalStub = sandbox.stub().returns('proposal');
+			buildProposalStub = sinon.stub().returns('proposal');
 			revert.push(Client.__set__('clientUtils.buildProposal', buildProposalStub));
-			signProposalStub = sandbox.stub().returns('signed-proposal');
+			signProposalStub = sinon.stub().returns('signed-proposal');
 			revert.push(Client.__set__('clientUtils.signProposal', signProposalStub));
-			sendPeersProposalStub = sandbox.stub().returns(Promise.resolve(['response']));
+			sendPeersProposalStub = sinon.stub().returns(Promise.resolve(['response']));
 			revert.push(Client.__set__('clientUtils.sendPeersProposal', sendPeersProposalStub));
-			translateCCTypeStub = sandbox.stub().returns('go');
+			translateCCTypeStub = sinon.stub().returns('go');
 			revert.push(Client.__set__('clientUtils.translateCCType', translateCCTypeStub));
 			revert.push(Client.__set__('_commonProto.HeaderType.ENDORSER_TRANSACTION', 'ENDORSER_TRANSACITON'));
 
@@ -1544,7 +1604,7 @@ describe('Client', () => {
 		});
 
 		it('should install using chaincode ID, chaincode version, and chaincode path', async () => {
-			const fromDirectoryStub = sandbox.stub(Package, 'fromDirectory').withArgs({
+			const fromDirectoryStub = sinon.stub(Package, 'fromDirectory').withArgs({
 				name: 'mycc',
 				version: '0.0.1',
 				path: 'mycc',
@@ -1571,7 +1631,7 @@ describe('Client', () => {
 		});
 
 		it('should install using chaincode ID, chaincode version, chaincode path, and chaincode type', async () => {
-			const fromDirectoryStub = sandbox.stub(Package, 'fromDirectory').withArgs({
+			const fromDirectoryStub = sinon.stub(Package, 'fromDirectory').withArgs({
 				name: 'mycc',
 				version: '0.0.1',
 				path: 'mycc',
@@ -1598,7 +1658,7 @@ describe('Client', () => {
 		});
 
 		it('should install using chaincode ID, chaincode version, chaincode path, chaincode type, and metadata path', async () => {
-			const fromDirectoryStub = sandbox.stub(Package, 'fromDirectory').withArgs({
+			const fromDirectoryStub = sinon.stub(Package, 'fromDirectory').withArgs({
 				name: 'mycc',
 				version: '0.0.1',
 				path: 'mycc',
@@ -1626,7 +1686,7 @@ describe('Client', () => {
 
 		it('should install, but not package, when dev mode is enabled', async () => {
 			client.setDevMode(true);
-			const fromDirectoryStub = sandbox.stub(Package, 'fromDirectory').rejects(new Error('such error'));
+			const fromDirectoryStub = sinon.stub(Package, 'fromDirectory').rejects(new Error('such error'));
 			getTargetPeersStub.withArgs(['peer']).returns(['peer']);
 			const request = {chaincodeId: 'mycc', chaincodeVersion: '0.0.1', chaincodePath: 'mycc', targets: ['peer']};
 			const response = await client.installChaincode(request);
@@ -1647,7 +1707,7 @@ describe('Client', () => {
 		});
 
 		it('should install using a chaincode package', async () => {
-			const fromDirectoryStub = sandbox.stub(Package, 'fromDirectory').rejects(new Error('such error'));
+			const fromDirectoryStub = sinon.stub(Package, 'fromDirectory').rejects(new Error('such error'));
 			getTargetPeersStub.withArgs(['peer']).returns(['peer']);
 			const request = {chaincodePackage: smartContractPackageBytes, targets: ['peer']};
 			const response = await client.installChaincode(request);
@@ -1668,7 +1728,7 @@ describe('Client', () => {
 		});
 
 		it('should install using an explicit transaction ID', async () => {
-			const fromDirectoryStub = sandbox.stub(Package, 'fromDirectory').withArgs({
+			const fromDirectoryStub = sinon.stub(Package, 'fromDirectory').withArgs({
 				name: 'mycc',
 				version: '0.0.1',
 				path: 'mycc',
@@ -1694,7 +1754,7 @@ describe('Client', () => {
 		});
 
 		it('should install using the specified target peers', async () => {
-			const fromDirectoryStub = sandbox.stub(Package, 'fromDirectory').withArgs({
+			const fromDirectoryStub = sinon.stub(Package, 'fromDirectory').withArgs({
 				name: 'mycc',
 				version: '0.0.1',
 				path: 'mycc',
@@ -1720,7 +1780,7 @@ describe('Client', () => {
 		});
 
 		it('should install using the peers discovered for the channel', async () => {
-			const fromDirectoryStub = sandbox.stub(Package, 'fromDirectory').withArgs({
+			const fromDirectoryStub = sinon.stub(Package, 'fromDirectory').withArgs({
 				name: 'mycc',
 				version: '0.0.1',
 				path: 'mycc',
@@ -1759,16 +1819,16 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getClientConfigStub = sandbox.stub();
-			newDefaultKeyValueStoreStub = sandbox.stub().returns(Promise.resolve('key-val-store'));
+			getClientConfigStub = sinon.stub();
+			newDefaultKeyValueStoreStub = sinon.stub().returns(Promise.resolve('key-val-store'));
 			revert.push(Client.__set__('BaseClient.newDefaultKeyValueStore', newDefaultKeyValueStoreStub));
-			setStateStoreStub = sandbox.stub();
-			setCryptoKeyStoreStub = sandbox.stub();
-			cryptoSuiteStub = sandbox.stub().returns({setCryptoKeyStore: setCryptoKeyStoreStub});
+			setStateStoreStub = sinon.stub();
+			setCryptoKeyStoreStub = sinon.stub();
+			cryptoSuiteStub = sinon.stub().returns({setCryptoKeyStore: setCryptoKeyStoreStub});
 			revert.push(Client.__set__('BaseClient.newCryptoSuite', cryptoSuiteStub));
-			newCryptoKeyStoreStub = sandbox.stub();
+			newCryptoKeyStoreStub = sinon.stub();
 			revert.push(Client.__set__('BaseClient.newCryptoKeyStore', newCryptoKeyStoreStub));
-			setCryptoSuiteStub = sandbox.stub();
+			setCryptoSuiteStub = sinon.stub();
 
 			client = new Client();
 			client.setStateStore = setStateStoreStub;
@@ -1843,7 +1903,7 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getSigningIdentityStub = sandbox.stub();
+			getSigningIdentityStub = sinon.stub();
 			client = new Client();
 		});
 
@@ -1877,13 +1937,13 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getCryptoSuiteStub = sandbox.stub();
-			importKeyStub = sandbox.stub();
-			newCryptoSuiteStub = sandbox.stub().returns({importKey: importKeyStub});
+			getCryptoSuiteStub = sinon.stub();
+			importKeyStub = sinon.stub();
+			newCryptoSuiteStub = sinon.stub().returns({importKey: importKeyStub});
 			revert.push(Client.__set__('BaseClient.newCryptoSuite', newCryptoSuiteStub));
-			SigningIdentityStub = sandbox.stub();
+			SigningIdentityStub = sinon.stub();
 			revert.push(Client.__set__('SigningIdentity', SigningIdentityStub));
-			SignerStub = sandbox.stub();
+			SignerStub = sinon.stub();
 			revert.push(Client.__set__('Signer', SignerStub));
 
 			client = new Client();
@@ -1979,12 +2039,12 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getClientConfigStub = sandbox.stub();
-			getMspidStub = sandbox.stub().returns('mspid');
-			getAdminPrivateKeyStub = sandbox.stub().returns('admin-private-key');
-			getAdminCertStub = sandbox.stub().returns('admin-cert');
-			getAdminSigningIdentityStub = sandbox.stub();
-			getOrganizationStub = sandbox.stub().returns({
+			getClientConfigStub = sinon.stub();
+			getMspidStub = sinon.stub().returns('mspid');
+			getAdminPrivateKeyStub = sinon.stub().returns('admin-private-key');
+			getAdminCertStub = sinon.stub().returns('admin-cert');
+			getAdminSigningIdentityStub = sinon.stub();
+			getOrganizationStub = sinon.stub().returns({
 				getMspid: getMspidStub,
 				getAdminPrivateKey: getAdminPrivateKeyStub,
 				getAdminCert: getAdminCertStub
@@ -2042,9 +2102,9 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getClientConfigStub = sandbox.stub();
-			getOrganizationStub = sandbox.stub();
-			getMspidStub = sandbox.stub();
+			getClientConfigStub = sinon.stub();
+			getOrganizationStub = sinon.stub();
+			getMspidStub = sinon.stub();
 
 			client = new Client();
 		});
@@ -2082,7 +2142,7 @@ describe('Client', () => {
 			sinon.assert.called(getClientConfigStub);
 			sinon.assert.calledWith(getOrganizationStub, {}, true);
 			sinon.assert.called(getMspidStub);
-			client._mspid.should.equal(1);
+			client.getMspid().should.equal(1);
 		});
 	});
 
@@ -2091,7 +2151,7 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getClientConfigStub = sandbox.stub();
+			getClientConfigStub = sinon.stub();
 
 			client = new Client();
 		});
@@ -2130,14 +2190,14 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getUserContextStub = sandbox.stub();
-			isEnrolledStub = sandbox.stub();
-			getClientConfigStub = sandbox.stub();
-			getOrganizationStub = sandbox.stub();
-			getMspidStub = sandbox.stub();
-			getCertificateAuthorityStub = sandbox.stub();
-			enrollStub = sandbox.stub();
-			createUserStub = sandbox.stub();
+			getUserContextStub = sinon.stub();
+			isEnrolledStub = sinon.stub();
+			getClientConfigStub = sinon.stub();
+			getOrganizationStub = sinon.stub();
+			getMspidStub = sinon.stub();
+			getCertificateAuthorityStub = sinon.stub();
+			enrollStub = sinon.stub();
+			createUserStub = sinon.stub();
 
 			client = new Client();
 			client.getUserContext = getUserContextStub;
@@ -2298,7 +2358,7 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			setValueStub = sandbox.stub();
+			setValueStub = sinon.stub();
 
 			client = new Client();
 		});
@@ -2337,13 +2397,11 @@ describe('Client', () => {
 	describe('#setUserContext', () => {
 		let saveUserToStateStoreStub;
 		let _setUserFromConfigStub;
-		const MockUser = class { };
 
 		let client;
 		beforeEach(() => {
-			saveUserToStateStoreStub = sandbox.stub();
-			_setUserFromConfigStub = sandbox.stub();
-			revert.push(Client.__set__('User', MockUser));
+			saveUserToStateStoreStub = sinon.stub();
+			_setUserFromConfigStub = sinon.stub();
 
 			client = new Client();
 			client.saveUserToStateStore = saveUserToStateStoreStub;
@@ -2360,27 +2418,27 @@ describe('Client', () => {
 
 		it('should save the user to the state store and return it', async () => {
 			saveUserToStateStoreStub.returns('user');
-			const user = await client.setUserContext(new MockUser(), false);
-			sinon.assert.calledWith(FakeLogger.debug, 'setUserContext - user: [object Object], skipPersistence: false');
+			const user = await client.setUserContext(new User({name: 'user'}), false);
+			sinon.assert.calledWithMatch(FakeLogger.debug, /setUserContext - user: .+, skipPersistence: false/);
 			sinon.assert.calledWith(FakeLogger.debug, 'setUserContext - begin promise to saveUserToStateStore');
 			sinon.assert.called(saveUserToStateStoreStub);
 			user.should.equal('user');
 		});
 
-		it('should return the user', async () => {
+		it('should return the saved user', async () => {
 			saveUserToStateStoreStub.returns('user');
-			const newUser = new MockUser();
+			const newUser = new User({name: 'user'});
 			const user = await client.setUserContext(newUser, true);
-			sinon.assert.calledWith(FakeLogger.debug, 'setUserContext - user: [object Object], skipPersistence: true');
+			sinon.assert.calledWithMatch(FakeLogger.debug, /setUserContext - user: .+, skipPersistence: true/);
 			sinon.assert.calledWith(FakeLogger.debug, 'setUserContext - resolved user');
 			user.should.equal(newUser);
 		});
 
-		it('should return the user', async () => {
+		it('should return the unsaved user', async () => {
 			_setUserFromConfigStub.returns('user');
 			const newUser = {username: 'test'};
 			const user = await client.setUserContext(newUser, true);
-			sinon.assert.calledWith(FakeLogger.debug, 'setUserContext - user: [object Object], skipPersistence: true');
+			sinon.assert.calledWithMatch(FakeLogger.debug, /setUserContext - user: .+, skipPersistence: true/);
 			sinon.assert.calledWith(FakeLogger.debug, 'setUserContext - will try to use common connection profile to set the user');
 			sinon.assert.calledWith(_setUserFromConfigStub, newUser);
 			user.should.equal('user');
@@ -2394,9 +2452,9 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getNameStub = sandbox.stub();
-			loadUserFromStateStoreStub = sandbox.stub();
-			setUserContextStub = sandbox.stub();
+			getNameStub = sinon.stub();
+			loadUserFromStateStoreStub = sinon.stub();
+			setUserContextStub = sinon.stub();
 			client = new Client();
 			client.loadUserFromStateStore = loadUserFromStateStoreStub;
 			client.setUserContext = setUserContextStub;
@@ -2488,7 +2546,7 @@ describe('Client', () => {
 	});
 
 	describe('#loadUserFromStateStore', () => {
-		const MockUser = class { };
+		const FakeUser = class { };
 		let getValueStub;
 		let getCryptoSuiteStub;
 		let setCryptoSuiteStub;
@@ -2496,14 +2554,14 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			revert.push(Client.__set__('User', MockUser));
-			getValueStub = sandbox.stub();
-			getCryptoSuiteStub = sandbox.stub();
-			setCryptoSuiteStub = sandbox.stub();
-			fromStringStub = sandbox.stub();
+			revert.push(Client.__set__('User', FakeUser));
+			getValueStub = sinon.stub();
+			getCryptoSuiteStub = sinon.stub();
+			setCryptoSuiteStub = sinon.stub();
+			fromStringStub = sinon.stub();
 
-			MockUser.prototype.fromString = fromStringStub;
-			MockUser.prototype.setCryptoSuite = setCryptoSuiteStub;
+			FakeUser.prototype.fromString = fromStringStub;
+			FakeUser.prototype.setCryptoSuite = setCryptoSuiteStub;
 
 			client = new Client();
 			client.getCryptoSuite = getCryptoSuiteStub;
@@ -2549,7 +2607,7 @@ describe('Client', () => {
 	});
 
 	describe('#createUser', () => {
-		let MockUser;
+		let FakeUser;
 		let userConstructorStub;
 		let readFileStub;
 		let getCryptoSuiteStub;
@@ -2561,21 +2619,21 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			userConstructorStub = sandbox.stub();
-			MockUser = class { };
-			setCryptoSuiteStub = sandbox.stub();
-			setEnrollmentStub = sandbox.stub().returns(Promise.resolve());
-			MockUser.prototype.constructor = userConstructorStub;
-			MockUser.prototype.setCryptoSuite = setCryptoSuiteStub;
-			MockUser.prototype.setEnrollment = setEnrollmentStub;
-			readFileStub = sandbox.stub().returns(Promise.resolve(1));
-			getCryptoSuiteStub = sandbox.stub();
-			importKeyStub = sandbox.stub();
-			setUserContextStub = sandbox.stub().returns(Promise.resolve());
-			setCryptoKeyStoreStub = sandbox.stub();
+			userConstructorStub = sinon.stub();
+			FakeUser = class { };
+			setCryptoSuiteStub = sinon.stub();
+			setEnrollmentStub = sinon.stub().returns(Promise.resolve());
+			FakeUser.prototype.constructor = userConstructorStub;
+			FakeUser.prototype.setCryptoSuite = setCryptoSuiteStub;
+			FakeUser.prototype.setEnrollment = setEnrollmentStub;
+			readFileStub = sinon.stub().returns(Promise.resolve(1));
+			getCryptoSuiteStub = sinon.stub();
+			importKeyStub = sinon.stub();
+			setUserContextStub = sinon.stub().returns(Promise.resolve());
+			setCryptoKeyStoreStub = sinon.stub();
 
 			revert.push(Client.__set__('readFile', readFileStub));
-			revert.push(Client.__set__('User', MockUser));
+			revert.push(Client.__set__('User', FakeUser));
 
 			client = new Client();
 			client.getCryptoSuite = getCryptoSuiteStub.returns({importKey: importKeyStub.returns(Promise.resolve('imported-key'))});
@@ -2641,9 +2699,9 @@ describe('Client', () => {
 			sinon.assert.called(getCryptoSuiteStub);
 			sinon.assert.calledWith(setEnrollmentStub, 'imported-key', 'privateKeyPEM', '1', true);
 			sinon.assert.calledWith(FakeLogger.debug, 'then setUserContext');
-			sinon.assert.calledWith(setUserContextStub, new MockUser(), true);
+			sinon.assert.calledWith(setUserContextStub, new FakeUser(), true);
 			sinon.assert.calledWith(FakeLogger.debug, 'then user');
-			user.should.deep.equal(new MockUser());
+			user.should.deep.equal(new FakeUser());
 		});
 
 		it('should return a user if getCryptoSuite returns null', async () => {
@@ -2659,9 +2717,9 @@ describe('Client', () => {
 			sinon.assert.called(getCryptoSuiteStub);
 			sinon.assert.calledWith(setEnrollmentStub, 'imported-key', 'privateKeyPEM', '1', true);
 			sinon.assert.calledWith(FakeLogger.debug, 'then setUserContext');
-			sinon.assert.calledWith(setUserContextStub, new MockUser(), true);
+			sinon.assert.calledWith(setUserContextStub, new FakeUser(), true);
 			sinon.assert.calledWith(FakeLogger.debug, 'then user');
-			user.should.deep.equal(new MockUser());
+			user.should.deep.equal(new FakeUser());
 		});
 
 		it('should return a user if getCryptoSuite does not return null', async () => {
@@ -2677,9 +2735,9 @@ describe('Client', () => {
 			sinon.assert.calledWith(FakeLogger.debug, 'cryptoSuite has a cryptoKeyStore');
 			sinon.assert.calledWith(setEnrollmentStub, 'imported-key', 'privateKeyPEM', '1', true);
 			sinon.assert.calledWith(FakeLogger.debug, 'then setUserContext');
-			sinon.assert.calledWith(setUserContextStub, new MockUser(), true);
+			sinon.assert.calledWith(setUserContextStub, new FakeUser(), true);
 			sinon.assert.calledWith(FakeLogger.debug, 'then user');
-			user.should.deep.equal(new MockUser());
+			user.should.deep.equal(new FakeUser());
 		});
 
 		it('should return a user if getCryptoSuite does not return null', async () => {
@@ -2693,9 +2751,9 @@ describe('Client', () => {
 			sinon.assert.calledWith(FakeLogger.debug, 'cryptoSuite has a cryptoKeyStore');
 			sinon.assert.calledWith(setEnrollmentStub, 'imported-key', '1', '1', false);
 			sinon.assert.calledWith(FakeLogger.debug, 'then setUserContext');
-			sinon.assert.calledWith(setUserContextStub, new MockUser(), false);
+			sinon.assert.calledWith(setUserContextStub, new FakeUser(), false);
 			sinon.assert.calledWith(FakeLogger.debug, 'then user');
-			user.should.deep.equal(new MockUser());
+			user.should.deep.equal(new FakeUser());
 		});
 
 		it('should return a user if getCryptoSuite does not return null', async () => {
@@ -2709,9 +2767,9 @@ describe('Client', () => {
 			sinon.assert.called(getCryptoSuiteStub);
 			sinon.assert.calledWith(FakeLogger.debug, 'cryptoSuite has a cryptoKeyStore');
 			sinon.assert.calledWith(FakeLogger.debug, 'then setUserContext');
-			sinon.assert.calledWith(setUserContextStub, new MockUser(), false);
+			sinon.assert.calledWith(setUserContextStub, new FakeUser(), false);
 			sinon.assert.calledWith(FakeLogger.debug, 'then user');
-			user.should.deep.equal(new MockUser());
+			user.should.deep.equal(new FakeUser());
 		});
 
 		it('should return a user if getCryptoSuite does not return null', async () => {
@@ -2725,9 +2783,9 @@ describe('Client', () => {
 			sinon.assert.called(getCryptoSuiteStub);
 			sinon.assert.calledWith(FakeLogger.debug, 'cryptoSuite has a cryptoKeyStore');
 			sinon.assert.calledWith(FakeLogger.debug, 'then setUserContext');
-			sinon.assert.calledWith(setUserContextStub, new MockUser(), false);
+			sinon.assert.calledWith(setUserContextStub, new FakeUser(), false);
 			sinon.assert.calledWith(FakeLogger.debug, 'then user');
-			user.should.deep.equal(new MockUser());
+			user.should.deep.equal(new FakeUser());
 		});
 	});
 
@@ -2737,7 +2795,7 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getPeerStub = sandbox.stub();
+			getPeerStub = sinon.stub();
 			client = new Client();
 			client.getPeer = getPeerStub;
 		});
@@ -2779,9 +2837,9 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			getOrdererStub = sandbox.stub();
-			getChannelStub = sandbox.stub();
-			getOrderersStub = sandbox.stub();
+			getOrdererStub = sinon.stub();
+			getChannelStub = sinon.stub();
+			getOrderersStub = sinon.stub();
 
 			client = new Client();
 			client.getOrderer = getOrdererStub;
@@ -2856,7 +2914,7 @@ describe('Client', () => {
 
 		let client;
 		beforeEach(() => {
-			setTlsClientCertAndKeyStub = sandbox.stub();
+			setTlsClientCertAndKeyStub = sinon.stub();
 			client = new Client();
 			client.setTlsClientCertAndKey = setTlsClientCertAndKeyStub;
 		});
@@ -2876,8 +2934,8 @@ describe('Client', () => {
 		});
 
 		it('should create and return the cert hash', () => {
-			const pemToDERStub = sandbox.stub().returns('DER');
-			const computeHashStub = sandbox.stub().returns('cert-hash');
+			const pemToDERStub = sinon.stub().returns('DER');
+			const computeHashStub = sinon.stub().returns('cert-hash');
 			revert.push(Client.__set__('sdkUtils.pemToDER', pemToDERStub));
 			revert.push(Client.__set__('computeHash', computeHashStub));
 
@@ -2931,9 +2989,9 @@ describe('Client', () => {
 		});
 
 		it('should return then hash', () => {
-			const digestStub = sandbox.stub().returns('hash');
-			const updateStub = sandbox.stub().returns({digest: digestStub});
-			const createHashStub = sandbox.stub().returns({update: updateStub});
+			const digestStub = sinon.stub().returns('hash');
+			const updateStub = sinon.stub().returns({digest: digestStub});
+			const createHashStub = sinon.stub().returns({update: updateStub});
 			const cryptoStub = {createHash: createHashStub};
 			revert.push(Client.__set__('crypto', cryptoStub));
 			const hash = computehash('data');
@@ -2993,9 +3051,9 @@ describe('Client', () => {
 		});
 
 		beforeEach(() => {
-			bufferFromStub = sandbox.stub();
+			bufferFromStub = sinon.stub();
 			revert.push(Client.__set__('Buffer.from', bufferFromStub));
-			configSignatureDecodeStub = sandbox.stub();
+			configSignatureDecodeStub = sinon.stub();
 			revert.push(Client.__set__('_configtxProto.ConfigSignature.decode', configSignatureDecodeStub));
 		});
 
@@ -3036,16 +3094,16 @@ describe('Client', () => {
 		});
 
 		beforeEach(() => {
-			getConfigSettingStub = sandbox.stub();
+			getConfigSettingStub = sinon.stub();
 			revert.push(Client.__set__('Client.getConfigSetting', getConfigSettingStub));
 
-			requireStub = sandbox.stub();
+			requireStub = sinon.stub();
 			revert.push(Client.__set__('require', requireStub));
-			MockNetworkConfig = sandbox.stub();
-			readFileSyncStub = sandbox.stub();
+			MockNetworkConfig = sinon.stub();
+			readFileSyncStub = sinon.stub();
 			revert.push(Client.__set__('fs.readFileSync', readFileSyncStub));
 			revert.push(Client.__set__('path.resolve', (v) => v));
-			safeLoadStub = sandbox.stub();
+			safeLoadStub = sinon.stub();
 			revert.push(Client.__set__('yaml.safeLoad', safeLoadStub));
 		});
 

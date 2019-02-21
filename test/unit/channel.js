@@ -1071,8 +1071,8 @@ test('\n\n ** Channel Discovery tests **\n\n', async (t) => {
 		async () => {
 			await channel.initialize();
 		},
-		/No target provided for discovery services/,
-		'Channel tests, sendTransactionProposal(): "target" parameter not specified and no peers are set on this Channel'
+		/"target" parameter not specified and no peers are set on this Channel/,
+		'Channel tests, initialize(): "target" parameter not specified and no peers are set on this Channel'
 	);
 
 
@@ -1087,7 +1087,7 @@ test('\n\n ** Channel Discovery tests **\n\n', async (t) => {
 			});
 		},
 		/No identity has been assigned to this client/,
-		'Channel tests, sendTransactionProposal(): No identity has been assigned to this client'
+		'Channel tests, initialize(): No identity has been assigned to this client'
 	);
 
 	await testutil.tapeAsyncThrow(t,
@@ -1139,6 +1139,35 @@ test('\n\n ** Channel Discovery tests **\n\n', async (t) => {
 			t.pass('Check Failed to initialize channel with good endorsement handler path');
 		} else {
 			t.fail('2 - Receive other failure ' + error.toString());
+		}
+	}
+
+	try {
+		await channel.initialize({
+			target: peer,
+			commitHandler: 'no.where'
+		});
+		t.fail('able to initialize channel with a bad commit handler path');
+	} catch (error) {
+		if (error.message.includes('Cannot find module')) {
+			t.pass('Check Failed to initialize channel with bad commit handler path');
+		} else {
+			t.fail('1.2 - Receive other failure ' + error.toString());
+		}
+	}
+
+	try {
+		await channel.initialize({
+			target: peer,
+			endorsementHandler: 'fabric-client/lib/impl/BasicCommitHandler.js',
+			discover: false
+		});
+		t.fail('able to initialize channel with a good commit handler path');
+	} catch (error) {
+		if (error.message.includes('Failed to connect before the deadline')) {
+			t.pass('Check Failed to initialize channel with good commit handler path');
+		} else {
+			t.fail('2.1 - Receive other failure ' + error.toString());
 		}
 	}
 
@@ -1287,8 +1316,19 @@ test('\n\n ** Channel _getOrderer tests **\n\n', (t) => {
 	t.end();
 });
 test('\n\n ** Channel mspid tests **\n\n', (t) => {
-	const client = new Client();
-	client._mspid = 'Org1MSP';
+	const connectionProfile = {
+		name: 'test-network',
+		version: '1.0',
+		client: {
+			organization: 'Org1'
+		},
+		organizations: {
+			Org1: {
+				mspid: 'Org1MSP'
+			}
+		}
+	};
+	const client = Client.loadFromConfig(connectionProfile);
 	const channel = new Channel('does-not-matter', client);
 	const peer1 = client.newPeer('grpc://localhost:7051');
 	channel.addPeer(peer1, 'Org1MSP');

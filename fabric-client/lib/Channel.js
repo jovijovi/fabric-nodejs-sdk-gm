@@ -1,8 +1,16 @@
 /*
-# Copyright IBM Corp. All Rights Reserved.
-#
-# SPDX-License-Identifier: Apache-2.0
-*/
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 'use strict';
 
@@ -119,10 +127,9 @@ const Channel = class {
 		this._discovery_interests = new Map();
 		this._discovery_results = null;
 		this._last_discover_timestamp = null;
-		this._discovery_peer = null;
 		this._use_discovery = sdk_utils.getConfigSetting('initialize-with-discovery', false);
 		this._as_localhost = sdk_utils.getConfigSetting('discovery-as-localhost', true);
-		this._endorsement_handler = null; // will be setup during initialization
+		this._endorsement_handler = null;
 		this._commit_handler = null;
 
 		logger.debug('Constructed Channel instance: name - %s, network mode: %s', this._name, !this._devMode);
@@ -145,6 +152,13 @@ const Channel = class {
 	 * @typedef {Object} InitializeRequest
 	 * @property {string | Peer | ChannelPeer} target - Optional. The target peer to be used
 	 *           to make the initialization requests for configuration information.
+	 *           When used with `targets` parameter, the peer referenced here will be
+	 *           added to the `targets` array.
+	 *           Default is to use the first ChannelPeer assigned to this channel.
+	 * @property {Array[Peer | ChannelPeer]} targets - Optional. The target peers to be used
+	 *           to make the initialization requests for configuration information.
+	 * 	         When used with `target` parameter, the peer referenced there will be
+	 *           added to the `targets` array.
 	 *           Default is to use the first ChannelPeer assigned to this channel.
 	 * @property {boolean} discover - Optional. Use the discovery service on the
 	 *           the target peer to load the configuration and network information.
@@ -172,6 +186,10 @@ const Channel = class {
 	 * This method retrieves the configuration from the orderer if no "config" parameter is passed in.
 	 * Optionally a configuration may be passed in to initialize this channel without making the call
 	 * to the orderer.
+	 * <br><br>
+	 * This method will also automatically load orderers and peers that represent
+	 * the fabric network when using discovery. This application must provide a
+	 * peer running the fabric discovery service.
 	 *
 	 * @param {InitializeRequest} request - Optional.  a {@link InitializeRequest}
 	 * @return {Promise} A Promise that will resolve when the action is complete
@@ -217,25 +235,9 @@ const Channel = class {
 			}
 		}
 
-		// setup the endorsement handler
-		if (!endorsement_handler_path && this._use_discovery) {
-			endorsement_handler_path = sdk_utils.getConfigSetting('endorsement-handler');
-			logger.debug('%s - using config setting for endorsement handler ::%s', method, endorsement_handler_path);
-		}
-		if (endorsement_handler_path) {
-			this._endorsement_handler = require(endorsement_handler_path).create(this);
-			await this._endorsement_handler.initialize();
-		}
-
-		// setup the commit handler
-		if (!commit_handler_path) {
-			commit_handler_path = sdk_utils.getConfigSetting('commit-handler');
-			logger.debug('%s - using config setting for commit handler ::%s', method, commit_handler_path);
-		}
-		if (commit_handler_path) {
-			this._commit_handler = require(commit_handler_path).create(this);
-			await this._commit_handler.initialize();
-		}
+		// setup the handlers
+		this._endorsement_handler = await this._build_handler(endorsement_handler_path, 'endorsement-handler');
+		this._commit_handler = await this._build_handler(commit_handler_path, 'commit-handler');
 
 		let results = null;
 		try {
@@ -255,31 +257,41 @@ const Channel = class {
 		this._discovery_results = null;
 		this._last_discover_timestamp = null;
 		this._last_refresh_request = Object.assign({}, request);
-		let target_peer = this._discovery_peer;
+		let target_peers = [];
 
 		if (request && request.target) {
-			target_peer = request.target;
+			target_peers.push(request.target);
+		}
+		if (request && Array.isArray(request.targets)) {
+			target_peers = target_peers.concat(request.targets);
 		}
 
-		if (this._use_discovery) {
-			logger.debug('%s - starting discovery', method);
-			try {
-				target_peer = this._getTargetForDiscovery(target_peer);
-			} catch (error) {
-				logger.debug('Problem getting a target peer for discovery service :: %s', error);
+		if (target_peers.length === 0) {
+			if (this._use_discovery) {
+				target_peers = this._getTargets(null, Constants.NetworkConfig.DISCOVERY_ROLE, true);
+			} else {
+				target_peers = this._getTargets(null, Constants.NetworkConfig.ALL_ROLES, true);
 			}
-			if (!target_peer) {
-				throw new Error('No target provided for discovery services');
-			}
+		}
 
+		let final_error = null;
+		for (let target_peer of target_peers) {
 			try {
-				let discover_request = {
-					target: target_peer,
-					config: true
-				};
+				logger.debug('%s - target peer %s starting', method, target_peer);
 
-				const discovery_results = await this._discover(discover_request);
-				if (discovery_results) {
+				if (this._use_discovery) {
+					logger.debug('%s - starting discovery', method);
+					target_peer = this._getTargetForDiscovery(target_peer);
+
+					if (!target_peer) {
+						throw new Error('No target provided for discovery services');
+					}
+					let discover_request = {
+						target: target_peer,
+						config: true
+					};
+
+					const discovery_results = await this._discover(discover_request);
 					if (discovery_results.msps) {
 						this._buildDiscoveryMSPs(discovery_results);
 					} else {
@@ -291,61 +303,67 @@ const Channel = class {
 					if (discovery_results.peers_by_org) {
 						this._buildDiscoveryPeers(discovery_results, discovery_results.msps, request);
 					}
-				}
 
-				discovery_results.endorsement_plans = [];
+					discovery_results.endorsement_plans = [];
 
-				const interests = [];
-				const plan_ids = [];
-				this._discovery_interests.forEach((interest, plan_id) => {
-					logger.debug('%s - have interest of:%s', method, plan_id);
-					plan_ids.push(plan_id);
-					interests.push(interest);
-				});
+					const interests = [];
+					const plan_ids = [];
+					this._discovery_interests.forEach((interest, plan_id) => {
+						logger.debug('%s - have interest of:%s', method, plan_id);
+						plan_ids.push(plan_id);
+						interests.push(interest);
+					});
 
-				for (const i in plan_ids) {
-					const plan_id = plan_ids[i];
-					const interest = interests[i];
+					for (const i in plan_ids) {
+						const plan_id = plan_ids[i];
+						const interest = interests[i];
 
-					discover_request = {
-						target: target_peer,
-						interests: [interest]
-					};
+						discover_request = {
+							target: target_peer,
+							interests: [interest]
+						};
 
-					let discover_interest_results = null;
-					try {
-						discover_interest_results = await this._discover(discover_request);
-					} catch (error) {
-						logger.error('Not able to get an endorsement plan for %s', plan_id);
+						try {
+							const discover_interest_results = await this._discover(discover_request);
+							if (discover_interest_results &&
+								discover_interest_results.endorsement_plans &&
+								discover_interest_results.endorsement_plans[0]) {
+								const plan = this._buildDiscoveryEndorsementPlan(discover_interest_results, plan_id, discovery_results.msps, request);
+								discovery_results.endorsement_plans.push(plan);
+								logger.debug('%s - Added an endorsement plan for %s', method, plan_id);
+							} else {
+								logger.debug('%s - Not adding an endorsement plan for %s', method, plan_id);
+							}
+						} catch (error) {
+							logger.debug('%s - trying to get a plan for plan %s :: interest:%s error:%s', method, plan_id, interest, error);
+						}
+
 					}
+					discovery_results.timestamp = Date.now();
+					this._discovery_results = discovery_results;
+					this._last_discover_timestamp = discovery_results.timestamp;
 
-					if (discover_interest_results && discover_interest_results.endorsement_plans && discover_interest_results.endorsement_plans[0]) {
-						const plan = this._buildDiscoveryEndorsementPlan(discover_interest_results, plan_id, discovery_results.msps, request);
-						discovery_results.endorsement_plans.push(plan);
-						logger.debug('Added an endorsement plan for %s', plan_id);
-					} else {
-						logger.debug('Not adding an endorsement plan for %s', plan_id);
-					}
+					return discovery_results;
+				} else {
+					target_peer = this._getFirstAvailableTarget(target_peer);
+					const config_envelope = await this.getChannelConfig(target_peer);
+					logger.debug('%s - got config envelope from getChannelConfig :: %j', method, config_envelope);
+					const config_items = this.loadConfigEnvelope(config_envelope);
+
+					return config_items;
 				}
-
-				discovery_results.timestamp = Date.now();
-				this._discovery_results = discovery_results;
-				this._discovery_peer = target_peer;
-				this._last_discover_timestamp = discovery_results.timestamp;
-
-				return discovery_results;
 			} catch (error) {
-				logger.error(error);
-				throw Error('Failed to discover ::' + error.toString());
+				logger.error(error.toString());
+				final_error = error;
 			}
+
+			logger.debug('%s - target peer %s failed %s:', method, target_peer, final_error);
+		}
+
+		if (final_error) {
+			throw final_error;
 		} else {
-			target_peer = this._getFirstAvailableTarget(target_peer);
-			const config_envelope = await this.getChannelConfig(target_peer);
-			logger.debug('initialize - got config envelope from getChannelConfig :: %j', config_envelope);
-			const config_items = this.loadConfigEnvelope(config_envelope);
-
-			return config_items;
-
+			throw new Error('Initialization failed to complete');
 		}
 	}
 
@@ -931,14 +949,19 @@ const Channel = class {
 	 * This method will create a new ChannelEventHub and not save a reference.
 	 * Use the {getChannelEventHub} to reuse a ChannelEventHub.
 	 *
-	 * @param {Peer | string} peer A Peer instance or the name of a peer that has
-	 *        been assigned to the channel.
+	 * @param {Peer | string} peer Optional. A Peer instance or the name of a
+	 *        peer that has been assigned to the channel. If not provided the
+	 *        ChannelEventHub must be connected with a "target" peer.
 	 * @returns {ChannelEventHub} The ChannelEventHub instance
 	 */
 	newChannelEventHub(peer) {
-		// Will always return one or throw
-		const peers = this._getTargets(peer, Constants.NetworkConfig.EVENT_SOURCE_ROLE, true);
-		const channel_event_hub = new ChannelEventHub(this, peers[0]);
+		let _peer = null;
+		if (peer) {
+			const peers = this._getTargets(peer, Constants.NetworkConfig.EVENT_SOURCE_ROLE, true);
+			_peer = peers[0];
+		}
+		const channel_event_hub = new ChannelEventHub(this, _peer);
+
 		return channel_event_hub;
 	}
 
@@ -1250,6 +1273,13 @@ const Channel = class {
 				return results;
 			}
 		} else {
+			if (response instanceof Error) {
+				if (response.connectFailed) {
+					logger.error(' Unable to get discovery results from peer %s', target_peer.getUrl());
+					// close this peer down so that next time a new connection will be used
+					target_peer.close();
+				}
+			}
 			throw new Error('Discovery has failed to return results');
 		}
 	}
@@ -2341,7 +2371,12 @@ const Channel = class {
 	 *  data expires. For instance if the value is set to 10, a key last modified by block
 	 *  number 100 will be purged at block number 111. A zero value is treated same as MaxUint64,
 	 *  where the data will not be purged.
-	 * @property {Policy} policy - The
+	 * @property {boolean} member_read_only - The member only read access denotes
+	 *  whether only collection member clients can read the private data (if set
+	 *  to true), or even non members can read the data (if set to false, for
+	 *  example if you want to implement more granular access logic in the
+	 *  chaincode)
+	 * @property {Policy} policy - The "member_orgs_policy" policy
 	 */
 
 	/**
@@ -2429,7 +2464,8 @@ const Channel = class {
 	 *           passed to the chaincode in the transientMap.
 	 * @property {string} fcn - Optional. The function name to be returned when
 	 *           calling <code>stub.GetFunctionAndParameters()</code> in the target
-	 *           chaincode. Default is 'init'.
+	 *           chaincode. Default is 'init'; to pass in no function name, explicitly
+	 *           pass in fcn with a value of null or '' (empty string).
 	 * @property {string[]} args - Optional. Array of string arguments to pass to
 	 *           the function identified by the <code>fcn</code> value.
 	 * @property {Object} endorsement-policy - Optional. EndorsementPolicy object
@@ -2540,7 +2576,10 @@ const Channel = class {
 
 		// step 1: construct a ChaincodeSpec
 		const args = [];
-		args.push(Buffer.from(request.fcn ? request.fcn : 'init', 'utf8'));
+		const fcn = (typeof request.fcn === 'undefined' ? 'init' : request.fcn);
+		if (fcn) {
+			args.push(Buffer.from(fcn, 'utf8'));
+		}
 
 		for (const arg of request.args) {
 			args.push(Buffer.from(arg, 'utf8'));
@@ -2728,7 +2767,12 @@ const Channel = class {
 			logAndThrow(method, 'Missing "args" in Transaction proposal request');
 		}
 
-		if (!request.targets && this._endorsement_handler) {
+		// convert any names into peer objects or if empty find all
+		// endorsing peers added to this channel
+		request.targets = this._getTargets(request.targets, Constants.NetworkConfig.ENDORSING_PEER_ROLE);
+
+		// always use the handler if available (may not be just for discovery)
+		if (this._endorsement_handler) {
 			logger.debug('%s - running with endorsement handler', method);
 			const proposal = Channel._buildSignedProposal(request, this._name, this._clientContext);
 
@@ -2743,7 +2787,8 @@ const Channel = class {
 				request: request,
 				signed_proposal: proposal.signed,
 				timeout: timeout,
-				endorsement_hint: endorsement_hint
+				endorsement_hint: endorsement_hint,
+				use_discovery: this._use_discovery
 			};
 
 			const responses = await this._endorsement_handler.endorse(params);
@@ -2751,7 +2796,6 @@ const Channel = class {
 			return [responses, proposal.source];
 		} else {
 			logger.debug('%s - running without endorsement handler', method);
-			request.targets = this._getTargets(request.targets, Constants.NetworkConfig.ENDORSING_PEER_ROLE);
 
 			return Channel.sendTransactionProposal(request, this._name, this._clientContext, timeout);
 		}
@@ -2859,7 +2903,7 @@ const Channel = class {
 	 * to the orderer for further processing. This is the 2nd phase of the transaction
 	 * lifecycle in the fabric. The orderer will globally order the transactions in the
 	 * context of this channel and deliver the resulting blocks to the committing peers for
-	 * validation against the chaincode's endorsement policy. When the committering peers
+	 * validation against the chaincode's endorsement policy. When the committing peers
 	 * successfully validate the transactions, it will mark the transaction as valid inside
 	 * the block. After all transactions in a block have been validated, and marked either as
 	 * valid or invalid (with a [reason code]{@link https://github.com/hyperledger/fabric/blob/v1.0.0/protos/peer/transaction.proto#L125}),
@@ -2868,7 +2912,6 @@ const Channel = class {
 	 * The caller of this method must use the proposal responses returned from the endorser along
 	 * with the original proposal that was sent to the endorser. Both of these objects are contained
 	 * in the {@link ProposalResponseObject} returned by calls to any of the following methods:
-	 * <li>[installChaincode()]{@link Client#installChaincode}
 	 * <li>[sendInstantiateProposal()]{@link Channel#sendInstantiateProposal}
 	 * <li>[sendUpgradeProposal()]{@link Channel#sendUpgradeProposal}
 	 * <li>[sendTransactionProposal()]{@link Channel#sendTransactionProposal}
@@ -2928,9 +2971,15 @@ const Channel = class {
 		const envelope = Channel.buildEnvelope(this._clientContext, chaincodeProposal, endorsements, proposalResponse, use_admin_signer);
 
 		if (this._commit_handler) {
+			// protect the users input
+			const param_request = Object.assign({}, request);
+			if (param_request.orderer) {
+				// check and convert to orderer object if a name
+				param_request.orderer = this._clientContext.getTargetOrderer(param_request.orderer, this.getOrderers(), this._name);
+			}
 			const params = {
 				signed_envelope: envelope,
-				request: request,
+				request: param_request,
 				timeout: timeout
 			};
 			return this._commit_handler.commit(params);
@@ -3305,6 +3354,9 @@ const Channel = class {
 		if (!proposal_response) {
 			throw new Error('Missing proposal response');
 		}
+		if (proposal_response instanceof Error) {
+			return false;
+		}
 		if (!proposal_response.endorsement) {
 			throw new Error('Parameter must be a ProposalResponse Object');
 		}
@@ -3372,6 +3424,10 @@ const Channel = class {
 		}
 		if (proposal_responses.length === 0) {
 			throw new Error('proposal_responses is empty');
+		}
+
+		if (proposal_responses.some((response) => response instanceof Error)) {
+			return false;
 		}
 
 		const first_one = _getProposalResponseResults(proposal_responses[0]);
@@ -3524,6 +3580,22 @@ const Channel = class {
 		};
 
 		return JSON.stringify(state).toString();
+	}
+
+	async _build_handler(_handler_path, handler_name) {
+		const method = '_build_handler';
+		let handler_path = _handler_path;
+		let handler = null;
+		if (!handler_path) {
+			handler_path = sdk_utils.getConfigSetting(handler_name);
+			logger.debug('%s - using path %s for %s', method, handler_path, handler_name);
+		}
+		if (handler_path) {
+			handler = require(handler_path).create(this);
+			await handler.initialize();
+			logger.debug('%s - create instance of %s', method, handler_name);
+		}
+		return handler;
 	}
 
 };

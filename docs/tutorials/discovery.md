@@ -25,6 +25,11 @@ To use the service the application will have to connect with just one peer.
 #### Modified API's that will use the service discovery
 * `channel.initialize()` - This method has been enhanced by adding an option to
 query a peer using the new service discovery to initialize the channel object.
+This method may be call at anytime to reinitialize the channel. When using discovery,
+this may be used to assign a new target peer providing the discover service.
+The initialize() method is also required to instantiate the handlers, by default
+the handlers shipped with the fabric-client are designed to use the discovery
+results.
 * `channel.sendTransactionProposal()` - This method has been enhanced to use the
 discovered peers to send the endorsement proposal.
 * `channel.sendTransaction()` - This method has been enhanced to use the discovered
@@ -33,7 +38,9 @@ orderers to send the signed endorsements.
 #### New API's that will use service discovery
 * `channel.refresh()` - The channel will be refreshed with new service discovery
 results, add new peers, orderers, and MSPs. The call will use the service discovery
-settings as provided on the `channel.initialize()` call.
+settings as provided on the `channel.initialize()` call. If a new peer is required
+for the refresh of discovery results then call the `channel.initialize()` with a new
+target peer rather then calling refresh().
 * `channel.getDiscoveryResults()` - The channel will cache the results of the last query
 made to the service discovery and make the results available. The call will use
 the `discovery-cache-life` setting to determine if the results should be refreshed.
@@ -60,26 +67,6 @@ method to determine the target peers and how to send the proposal.
 a custom handler to be used. This handler is used in the `sendTransaction` method
 to determine the orderers and how to send the transaction to be committed.
 (default 'fabric-client/lib/impl/BasicCommitHandler.js')
-
-### new `EndorsementHandler`
-The sending of a proposal to be endorsed may be done using a custom code. The
-fabric-client will use by default the file called `DiscoveryEndorsementHandler`.
-The endorsement handler may be changed by changing the configuration setting
-"endorsement-handler" by doing a `setConfigSetting()` or placing a new line
-in configuration JSON file that application has applied to the fabric-client
-configuration.
-```
-Client.setConfigSetting('endorsement-handler', '/path/to/the/handler.js');
---or--
-Client.addConfigFile('/path/to/config.json');
-// the json file contains the following line
-// "endorsement-handler": "/path/to/the/handler.js"
-```
-A endorsement handler must implement the `api.EndorsementHandler`. When the
-channel is instantiated, the channel will read the path setting and create an
-instance of the handler for use by the new channel instance.
-
-
 
 #### How the `DiscoveryEndorsementHandler` works
 The `sendTransactionProposal` will use the peers included in the "targets" to
@@ -144,24 +131,6 @@ selected will likely change on every request.
 Note: If the above behavior does not meet the needs of your organization a
 custom handler may be used.
 
-### new `CommitHandler`
-The sending of the endorsements to be committed may be done using custom code.
-The fabric-client will use by default the file called `BasicCommitHandler`.
-The commit handler may be changed by changing the configuration setting
-"commit-handler" by doing a `setConfigSetting()` or placing a new line
-in configuration JSON file that application has applied to the fabric-client
-configuration.
-```
-Client.setConfigSetting('commit-handler', '/path/to/the/handler.js');
---or--
-Client.addConfigFile('/path/to/config.json');
-// the json file contains the following line
-// "commit-handler": "/path/to/the/handler.js"
-```
-A commit handler must implement the `api.CommitHandler`. When the
-channel is instantiated, the channel will read the path setting and create an
-instance of the handler for use by the new channel instance.
-
 #### How the `BasicCommitHandler` works
 The default handler that comes with the fabric-client will send to one orderer at
 a time until it receives a successful submission of the transaction. Sending
@@ -171,17 +140,19 @@ sender has the authority to send the request. The response from the orderer
 will indicate that the orderer has accepted the request. The `sendTransaction`
 has an optional parameter `orderer` that indicates the orderer to send the
 transaction. The handler will use the orderer as specified with the `orderer`
-parameter and send to any other orderers. If no orderer is specified the handler
+parameter and not send to any other orderers. If no orderer is specified the handler
 will get the list of orderers assigned to the channel. These orderers may have
 been assigned manually to the channel with a `channel.addOrderer()` call or
-automatically when using the service discovery.
+assigned automatically when using the service discovery.
 
 ### To Initialize
-
-
 By default the fabric-client will not use the service discovery. To enable the
 use of the service, set the config setting to true or use the discover parameter
 on the `initialize()` call.
+
+note: {@link Channel#initialize} must be run to both enable discovery and to
+startup the handlers.
+
 ```
 Client.setConfigSetting('initialize-with-discovery', true);
 --or--
@@ -261,7 +232,7 @@ peer0.org1.example.com:
 	- CORE_PEER_LISTENADDRESS=peer0.org1.example.com:7051
 	- CORE_PEER_GOSSIP_ENDPOINT=peer0.org1.example.com:7051
 	- CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org1.example.com:7051
-	- CORE_LOGGING_LEVEL=debug
+	- FABRIC_LOGGING_SPEC=debug
 	## the following setting redirects chaincode container logs to the peer container logs
 	- CORE_VM_DOCKER_ATTACHSTDOUT=true
 	- CORE_PEER_LOCALMSPID=Org1MSP
@@ -326,8 +297,8 @@ is not provided or for peers added by service discovery.
 peer0.org1.example.com:7051
 ```
 
-##### Using peers not added to the channel:
-To use the service discovery a starting point is required. The application
+##### Using a peer not added to the channel:
+To use the service discovery a peer is required. The application
 may define a peer and pass it on the initialize call. The peer does not
 have to be added to the channel instance.
 
@@ -336,11 +307,18 @@ const channel = client.newChannel('mychannel');
 const peer = client.newPeer(....);
 await channel.initialize({discover:true, target:peer});
 ```
-When the channel is initialized using service discover and peers and orderers are added
-to the channel, a peer with the address that was used for service discover
-will likely be on the list of discovered peers. A peer instance with the address
-used for service discover will be added to the channel with the same address that the
-peer instance used for service discover.
+When the channel is initialized using service discovery and peers and orderers
+are added to the channel, a peer with the address that was used for service
+discovery will likely be on the list of discovered peers. A peer instance with
+the address used for service discover will be added to the channel with the
+same address as the peer instance used for service discovery because the peer
+instance used on the initialize call is not added to the channel, it is only
+used on the initialize call.
+
+If the application chooses to use no longer use the peer on the initialize
+call or the peer that was automatically assigned call the `channel.initialize()`
+again and provide a peer instance or name. This new peer will be used going
+forward for service discovery calls.
 
 ##### Using connection profile:
 When using a connection profile, all the peers and orderers on the network will no

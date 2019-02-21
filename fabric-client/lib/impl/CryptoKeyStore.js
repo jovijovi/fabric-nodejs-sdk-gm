@@ -63,7 +63,7 @@ const CryptoKeyStoreMixin = (KeyValueStore) => class extends KeyValueStore {
 					return key;
 
 				if (key !== null) {
-					var pubKey = KEYUTIL.getKey(key);
+					const pubKey = KEYUTIL.getKey(key);
 					return new SM2_KEY(pubKey);
 				}
 			});
@@ -91,7 +91,7 @@ const CryptoKeyStoreMixin = (KeyValueStore) => class extends KeyValueStore {
  *
  * @class
  */
-const CryptoKeyStore = function (KVSImplClass, opts) {
+const CryptoKeyStore = function(KVSImplClass, opts) {
 	let superClass;
 
 	if (typeof KVSImplClass !== 'function') {
@@ -109,7 +109,7 @@ const CryptoKeyStore = function (KVSImplClass, opts) {
 		opts = KVSImplClass;
 	}
 
-	const MyClass = class extends CryptoKeyStoreMixin(superClass) { };
+	const MyClass = class extends CryptoKeyStoreMixin(superClass) {};
 	return new MyClass(opts);
 };
 
