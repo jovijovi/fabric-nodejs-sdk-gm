@@ -55,6 +55,8 @@ module.exports = class SM2_KEY {
 		var buff;
 
 		var pointToOctet = function(key) {
+			console.log('## pointToOctet, key=', key);
+
 			var byteLen = (key.ecparams.keylen + 7) >> 3;
 			let buff = Buffer.allocUnsafe(1 + 2 * byteLen);
 			buff[0] = 4; // uncompressed point (https://www.security-audit.com/files/x9-62-09-20-98.pdf, section 4.3.6)
@@ -76,9 +78,9 @@ module.exports = class SM2_KEY {
 		}
 
 		// always use SHA256 regardless of the key size in effect
-		console.log("~~~~~~~~~~~~~~~~~~~~~~~~~~")
-		console.log(Hash.SHA2_256(buff))
-		console.log("~~~~~~~~~~~~~~~~~~~~~~~~~~")
+		console.log('## get SKI ~~~~~~~~~~~~~~~~~~~~~~~~~~');
+		console.log('Hash(buff)=', Hash.SHA2_256(buff));
+		console.log('## get SKI ~~~~~~~~~~~~~~~~~~~~~~~~~~');
 		return Hash.SHA2_256(buff);
 	}
 

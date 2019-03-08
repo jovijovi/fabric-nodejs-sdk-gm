@@ -169,6 +169,9 @@ class Signer {
 	 *      hashingFunction: the function to use to hash
 	 */
 	sign(digest, opts) {
+		console.log('## identity.js, digest=', digest);
+		console.log('## identity.js, key=', this._key);
+		console.log('## identity.js, opts=', opts);
 		return this._cryptoSuite.sign(this._key, digest, opts);
 	}
 }
@@ -220,20 +223,22 @@ class SigningIdentity extends Identity {
 	 *   configured for the identity's own crypto suite object
 	 */
 	sign(msg, opts) {
+		console.log('## sign(msg, opts), msg=', msg);
 		// calculate the hash for the message before signing
-		let hashFunction;
-		if (opts && opts.hashFunction) {
-			if (typeof opts.hashFunction !== 'function') {
-				throw new Error('The "hashFunction" field must be a function');
-			}
-
-			hashFunction = opts.hashFunction;
-		} else {
-			hashFunction = this._cryptoSuite.hash.bind(this._cryptoSuite);
-		}
-
-		const digest = hashFunction(msg);
-		return this._signer.sign(Buffer.from(digest, 'hex'), null);
+		// let hashFunction;
+		// if (opts && opts.hashFunction) {
+		// 	if (typeof opts.hashFunction !== 'function') {
+		// 		throw new Error('The "hashFunction" field must be a function');
+		// 	}
+		//
+		// 	hashFunction = opts.hashFunction;
+		// } else {
+		// 	hashFunction = this._cryptoSuite.hash.bind(this._cryptoSuite);
+		// }
+		//
+		// const digest = hashFunction(msg);
+		// return this._signer.sign(Buffer.from(digest, 'hex'), null);
+		return this._signer.sign(msg, null);
 	}
 
 	static isInstance(object) {

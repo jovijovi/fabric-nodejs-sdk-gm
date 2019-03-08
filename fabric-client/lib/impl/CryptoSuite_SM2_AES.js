@@ -188,7 +188,9 @@ var CryptoSuite_SM2_AES = class extends api.CryptoSuite {
 
 			if (pemString.indexOf("-END PRIVATE KEY-") != -1) {
 				var reHex = /^\s*(?:[0-9A-Fa-f][0-9A-Fa-f]\s*)+$/
+				console.log('## Get PEM -- BEGIN --');
 				var privKey = getHexFromPEM(pemString, "PRIVATE KEY")
+				console.log('## Get PEM -- END --');
 				var der = reHex.test(privKey) ? Hex.decode(privKey) : Base64.unarmor(privKey);
 				var asn1 = ASN1.decode(der, 1)
 				key = new SM2({ 'curve': 'sm2' });
@@ -201,9 +203,9 @@ var CryptoSuite_SM2_AES = class extends api.CryptoSuite {
 				var hPub = "04" + hX + hY;
 				key.setPrivateKeyHex(asn1)
 				key.setPublicKeyHex(hPub)
-				console.log("===================================")
+				console.log('## importKey Log -- BEGIN --');
 				console.log(key)
-				console.log("===================================")
+				console.log('## importKey Log -- END --');
 			} else {
 				key = KEYUTIL.getKey(pemString);
 			}
@@ -289,6 +291,8 @@ var CryptoSuite_SM2_AES = class extends api.CryptoSuite {
 	 * Signs digest using key k.
 	 */
 	sign(key, digest) {
+		console.log('## SM2_AES key=', key);
+		console.log('## SM2_AES digest=', digest);
 		logger.debug("signing~~~~~~ key = %v ", key," digest = %s", digest.toString('base64'))
 		if (typeof key === 'undefined' || key === null) {
 			throw new Error('A valid key is required to sign');
@@ -307,7 +311,8 @@ var CryptoSuite_SM2_AES = class extends api.CryptoSuite {
 		// return sig.toDER();
 		var ec = new SM2({ 'curve': 'sm2' });
 		// var signKey = ec.keyFromPrivate(key._key.prvKeyHex, 'hex')
-		var sig = ec.sign(digest.toString("hex"), key);
+		// var sig = ec.sign(digest.toString("hex"), key);
+		var sig = ec.sign(digest, key);
 		sig.s = new BN(sig.s, 16)
 		sig.r = new BN(sig.r, 16)
 		var tmp = new Signature(sig);

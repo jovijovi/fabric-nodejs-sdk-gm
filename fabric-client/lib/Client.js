@@ -676,6 +676,7 @@ const Client = class extends BaseClient {
 
 		// get all the bytes to be signed together, then sign
 		const signing_bytes = Buffer.concat([signature_header_bytes, loadConfig]);
+		console.log('## signing_bytes=', signing_bytes);
 		const sig = signer.sign(signing_bytes);
 		const signature_bytes = Buffer.from(sig);
 

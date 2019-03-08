@@ -492,13 +492,13 @@
             var lineLength = 80
             var maxLength = 8 * lineLength;
             test = boss.stream.parseOctetString(content, content + len, 320);
-            console.log("9l9l9l9l9l9l9l9l9l9l9l9l9l9l9l9l99l9l9l9l9l9l")
-            console.log("content", content)
-            console.log("len", len)
-            console.log(sub)
-            console.log("tag", tag)
-            console.log("result", test.length)
-            console.log("9l9l9l9l9l9l9l9l9l9l9l9l9l9l9l9l99l9l9l9l9l9l")
+            console.log('## Decode Log -- BEGIN --');
+            console.log('content=', content);
+            console.log('len=', len);
+            console.log('sub=', sub);
+            console.log('tag=', tag);
+            console.log('result=', test.length);
+            console.log('## Decode Log -- END --');
             if (test.length == 64) {
                 fuckResult = test
             }

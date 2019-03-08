@@ -284,7 +284,7 @@ SM3Digest.prototype = {
         }
         return returnV
     }, GetZ: function (g, pubKeyHex) {
-        var userId = CryptoJS.enc.Utf8.parse("1234567812345679");
+        var userId = CryptoJS.enc.Utf8.parse('1234567812345678');
         var len = userId.words.length * 4 * 8;
         this.Update((len >> 8 & 0x00ff));
         this.Update((len & 0x00ff));
