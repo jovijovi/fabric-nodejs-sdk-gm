@@ -19,6 +19,8 @@
 // requires
 var api = require('../api.js');
 
+var smUtils = require('../../../sm2/sm/utils');
+
 var elliptic = require('elliptic');
 var EC = elliptic.ec;
 var sm2 = require('sm2');
@@ -321,8 +323,12 @@ var CryptoSuite_SM2_AES = class extends api.CryptoSuite {
 		tmp.recoveryParam = 1
 		logger.debug('sm2 signature: ', tmp, "\n sig.r :", sig.r.toString(), "\n sig.s :", sig.s.toString());
 		// sig = _preventMalleability(tmp, key._key.ecparams);
-		
-		return tmp.toDER();
+
+		const der = tmp.toDER();
+		console.log('## tmp=,', tmp);
+		console.log('## tmp.toDER=', smUtils.hashToBN(der));
+
+		return Buffer.from(der);
 	}
 
 	verify(key, signature, digest) {
