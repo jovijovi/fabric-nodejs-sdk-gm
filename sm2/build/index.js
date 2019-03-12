@@ -27786,68 +27786,49 @@ KJUR.crypto.SM3withSM2 = function (params) {
 
 		// /////////////////////////////
 
-		// const smDigest = new SM3Digest();
-		// const za222 = new SM3Digest().GetZ(G1, priv._key.pubKeyHex);
-		// console.log('## za=', smDigest.GetHex(za).toString());
-		// const zValue = smDigest.GetWords(smDigest.GetHex(za).toString());
-		// console.log('## zValue=', zValue);
-		// const smHash = new Array(smDigest.GetDigestSize());
-		//
-		// let rawData = Buffer.from('test').toString('utf8');
-		// console.log('## rawData=', rawData);
-		//
-		// // var rawData = CryptoJS.enc.Utf8.stringify(hash);
-		// rawData = CryptoJS.enc.Utf8.parse(rawData).toString();
-		// rawData = smDigest.GetWords(rawData);
-		//
-		// smDigest.BlockUpdate(zValue, 0, zValue.length);
-		// smDigest.BlockUpdate(rawData, 0, rawData.length);
-		// smDigest.DoFinal(smHash, 0);
-		// hash = smDigest.GetHex(smHash).toString();
-
-		//const d = new BigInteger(priv._key.prvKeyHex, 16);
-		const d = BigInteger.TEST;
-		console.log('## d=', d.toRadix(16)); // It's correct
-		const n = this.ecparams['n'];
-		console.log('## n=', n.toRadix(16)); // It's correct
+		// const d = new BigInteger(priv._key.prvKeyHex, 16);
+		// const d = BigInteger.TEST;
+		// console.log('## d=', d.toRadix(16)); // It's correct
+		// const n = this.ecparams['n'];
+		// console.log('## n=', n.toRadix(16)); // It's correct
 		// const e = new BigInteger(hash, 16);
-		//const e = new BigInteger(utils.bytesTohex(hash), 16);
-		//console.log('## e=', e.toRadix(16)); // It's correct
-
-		console.log('hash=', hash);
-		console.log('priv=', priv);
-		console.log('N=', n);
-		console.log('N:', n.toString());
-		//console.log('e=', e);
-		//console.log('E:', e.toString());
-		console.log('D:', d.toString());
+		// const e = new BigInteger(utils.bytesTohex(hash), 16);
+		// console.log('## e=', e.toRadix(16)); // It's correct
+		// console.log('hash=', hash);
+		// console.log('priv=', priv);
+		// console.log('N=', n);
+		// console.log('N:', n.toString());
+		// console.log('e=', e);
+		// console.log('E:', e.toString());
+		// console.log('D:', d.toString());
 
 		var curve = SM2; // curve parameter
 
 		const type = 1;
-		// k BigInteger
+
 		if (type === 1) {
-			var signature = {
-				r: "",
-				s: ""
-			}
+			let signature = {
+				r: '',
+				s: ''
+			};
+
 			while (true) {
-				// var k = new BN(_drbg.generate(32, 'hex', utils.random(64)), 16).umod(this.curve.n);
+				// var k = new BN(_drbg.generate(32, 'hex', utils.random(64)), 16).umod(curve.n);
 				var k = new BN(1234567890);
 				console.log('k=', k);
 				console.log('k=', k.toString());
-				console.log('this.curve.g=', curve.g);
-				console.log('this.curve.n=', curve.n);
-				var kx = curve.g.getX().mul(k);
-				console.log('kx=', kx);
+
+				console.log('curve.g=', curve.g);
+				console.log('curve.n=', curve.n);
 				var kg = curve.g.mul(k);
 				console.log('kg=', kg);
-				console.log('digest=', Buffer.from(hash).toString('hex'));
+
 				var e = utils.hashToBN(hash);
 				console.log('e=', e);
-				var r = utils.hashToBN(hash).add(kg.getX()).umod(curve.n);
-				var pri = k;
-				console.log("this.pri=", pri);
+				var r = e.add(kg.getX()).umod(curve.n);
+				// var pri = utils.hashToBN(priv._key.prvKeyHex);
+				var pri = new BN(1234567890);
+				console.log('pri=', pri);
 
 				// r = 0
 				if (r.isZero()) {
@@ -27859,7 +27840,7 @@ KJUR.crypto.SM3withSM2 = function (params) {
 				}
 
 				var t1 = new BN(1).add(pri).invm(curve.n);
-				//var t2 = k.sub(r.mul(this.pri)).umod(this.curve.n);
+				// var t2 = k.sub(r.mul(this.pri)).umod(this.curve.n);
 				var t2 = k.sub(r.mul(pri)); // ???
 				var s = t1.mul(t2).umod(curve.n);
 				if (!s.isZero()) {
@@ -27872,7 +27853,6 @@ KJUR.crypto.SM3withSM2 = function (params) {
 			console.log('signature=', signature);
 
 			return signature;
-
 
 			// let k = null;
 			// let kp = null;
@@ -27919,97 +27899,8 @@ KJUR.crypto.SM3withSM2 = function (params) {
 			// console.log('## sign - END - ####################################################################');
 			//
 			// return signature;
-
-            // var k = null;
-            // var kp = null;
-            // var r = null;
-            // var s = null;
-            // var t = null;
-            // var userD = d;
-            // var X = null;
-            // var Y = null;
-            // do {
-            //     do {
-            //         k = this.getBigRandom(n);
-            //         console.log('k=', k);
-			// 		console.log('k:', k.toString());
-            //         // var keypair = this.generateKeyPairHex();
-            //         // k = new BigInteger(keypair.prvKeyHex, 16);
-            //         // var pubkeyHex = keypair.pubKeyHex;
-            //         var pubkeyHex = priv._key.pubKeyHex;
-			//
-            //         kp = ECPointFp.decodeFromHex(this.ecparams['curve'], pubkeyHex);
-            //         X = kp.getX().toBigInteger();
-            //         Y = kp.getY().toBigInteger();
-			//
-            //         r = e.add(kp.getX().toBigInteger());
-            //         r = r.mod(n);
-            //         t = r.add(k);
-            //     }
-            //     while (r.equals(BigInteger.ZERO) || t.equals(n));
-			//
-            //     //var rD = userD.mod(r);
-			// 	   var rD = userD.multiply(r);
-            //     s = k.subtract(rD);
-            //     var da_1 = userD.add(BigInteger.ONE);
-            //     var da_1_Inv = da_1.modInverse(n);
-            //     s = s.multiply(da_1_Inv);
-            //     s = s.mod(n);
-			//
-            //     // s = r.multiply(userD);
-            //     // s = k.subtract(s).mod(n);
-            //     // s = da_1.multiply(s).mod(n);
-            // }
-            // while (s.equals(BigInteger.ZERO));
-            // console.log('X:', X.toString());
-            // console.log('Y:', Y.toString());
-			// let Q1 = ECPointFp.decodeFromHex(this.ecparams['curve'], priv._key.pubKeyHex);
-            // console.log(this.verifyRaw(e, r, s, Q1))
-			//
-			// let signature = {r: r.toString(16), s: s.toString(16)};
-			// console.log('signature=', signature);
-			//
-			// console.log('## sign - END - ####################################################################');
-			//
-            // return signature;
-
-        } else if (type == 2) {
-            var r, s;
-            do {
-                var k = this.getBigRandom(n);
-                var G = this.ecparams['G'];
-                var Q = G.multiply(k);
-                r = Q.getX().toBigInteger().mod(n);
-            } while (r.compareTo(BigInteger.ZERO) <= 0);
-
-            s = k.modInverse(n).multiply(e.add(d.multiply(r))).mod(n);
-            var Q1 = ECPointFp.decodeFromHex(this.ecparams['curve'], priv._key.pubKeyHex);
-            console.log(this.verifyRaw(e, r, s, Q1))
-            return { r: r.toString(16), s: s.toString(16) }
-        } else if (type == 3) {
-            var r, s;
-            do {
-                do {
-                    var G = this.ecparams['G'];
-                    var Q = G.multiply(d);
-                    r = e.add(Q.getX().toBigInteger()).mod(n);
-                }
-                while (r.equals(BigInteger.ZERO) || r.add(d).equals(n));
-
-                var da_1 = d.add(BigInteger.ONE);
-                da_1 = da_1.modInverse(n);
-                s = r.multiply(d);
-                s = d.subtract(s).mod(n);
-                s = da_1.multiply(s).mod(n);
-            }
-            while (s.equals(BigInteger.ZERO));
-            console.log("123")
-            // // return this.serializeSig(r, s);
-            var Q1 = ECPointFp.decodeFromHex(this.ecparams['curve'], priv._key.pubKeyHex);
-            console.log(this.verifyRaw(e, r, s, Q1))
-            return { r: r.toString(16), s: s.toString(16) }
-        }
-    };
+		}
+	};
 
     this.verifyWithMessageHash = function (hashHex, sigHex) {
         return this.verifyHex(hashHex, sigHex, this.pubKeyHex);
