@@ -27739,12 +27739,12 @@ KJUR.crypto.SM3withSM2 = function (params) {
         // return {r:r.toString(16),s:s.toString(16)}
     };
 
-	this.sign = function (hash, priv) {
+	this.sign = function (msg, priv) {
 		console.log('## sign - BEGIN - ####################################################################');
 
 		var curve = SM2; // curve parameter
 
-		// hash = 'test'; // FOR TEST
+		// msg = 'test'; // FOR TEST
 
 		console.log('## priv._key.pubKeyHex=', priv._key.pubKeyHex);
 
@@ -27762,21 +27762,26 @@ KJUR.crypto.SM3withSM2 = function (params) {
 
 		console.log('## zaHash=', utils.hashToBN(za));
 
-		console.log('## hash=', hash);
-		console.log('## hash=', utils.hashToBN(hash));
-		if (typeof hash === 'string') {
-			console.log('## hash type is string.');
-			za = za.concat(utils.strToBytes(hash));
+		console.log('## msg=', msg);
+		console.log('## msg=', utils.hashToBN(msg));
+
+		// need to confirm
+		// msg = new sm3().sum(msg);		// ???
+		// console.log('## digest_1st=', utils.hashToBN(msg));
+
+		if (typeof msg === 'string') {
+			console.log('## msg type is string.');
+			za = za.concat(utils.strToBytes(msg));
 		} else {
-			console.log('## hash type is byte.');
-			za = za.concat(hash);
+			console.log('## msg type is byte.');
+			za = za.concat(msg);
 		}
 
 		// console.log('## zaHash2=', utils.hashToBN(za));
 
-		hash = new sm3().sum(za);
+		const zaDigest = new sm3().sum(za);
 
-		console.log('## hash=', utils.hashToBN(hash));
+		console.log('## za=', utils.hashToBN(za));
 
 		let signature = {
 			r: '',
@@ -27794,7 +27799,7 @@ KJUR.crypto.SM3withSM2 = function (params) {
 			var kg = curve.g.mul(k);
 			console.log('kg=', kg);
 
-			var e = utils.hashToBN(hash);
+			var e = utils.hashToBN(zaDigest);
 			console.log('e=', e);
 			var r = e.add(kg.getX()).umod(curve.n);
 			var pri = utils.hashToBN(priv._key.prvKeyHex);
