@@ -327,6 +327,7 @@ var CryptoSuite_SM2_AES = class extends api.CryptoSuite {
 		const der = tmp.toDER();
 		console.log('## tmp=,', tmp);
 		console.log('## tmp.toDER=', smUtils.hashToBN(der));
+		console.log('## digest=', smUtils.hashToBN(digest));
 
 		return Buffer.from(der);
 	}
