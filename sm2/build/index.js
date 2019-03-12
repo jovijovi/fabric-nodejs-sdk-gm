@@ -8,6 +8,8 @@ code.google.com/p/crypto-js/wiki/License
 var navigator = {};
 navigator.userAgent = false;
 
+var sm3 = require('../sm/sm3');
+var utils = require('../sm/utils');
 
 var window = {};
 /**
@@ -17149,6 +17151,7 @@ BigInteger.fromByteArrayUnsigned = fromByteArrayUnsigned;
 // "constants"
 BigInteger.ZERO = nbv(0);
 BigInteger.ONE = nbv(1);
+BigInteger.TEST = nbv(1234567890);
 
 /*! (c) Tom Wu | http://www-cs-students.stanford.edu/~tjw/jsbn/
  */
@@ -27085,40 +27088,83 @@ KJUR.crypto.SM3withSM2 = function (params) {
 
 		// GetZ
 		const G1 = this.ecparams.G;
-		const G2 = ECPointFp.decodeFromHex(this.ecparams.curve, priv._key.pubKeyHex);
+		// const G2 = ECPointFp.decodeFromHex(this.ecparams.curve, priv._key.pubKeyHex);
 		console.log('## G1=', G1);
-		console.log('## G2=', G2);
+		// console.log('## G2=', G2);
 
-		const smDigest = new SM3Digest();
-		const za = new SM3Digest().GetZ(G1, priv._key.pubKeyHex);
-		console.log('## za=,', za);
-		const zValue = smDigest.GetWords(smDigest.GetHex(za).toString());
-		const smHash = new Array(smDigest.GetDigestSize());
+		// /////////////////////////////
 
-		let rawData = Buffer.from(hash).toString('utf8');
-		// var rawData = CryptoJS.enc.Utf8.stringify(hash);
-		rawData = CryptoJS.enc.Utf8.parse(rawData).toString();
-		rawData = smDigest.GetWords(rawData);
+		hash = 'test'; // FOR TEST
 
-		smDigest.BlockUpdate(zValue, 0, zValue.length);
-		smDigest.BlockUpdate(rawData, 0, rawData.length);
-		smDigest.DoFinal(smHash, 0);
-		hash = smDigest.GetHex(smHash).toString();
+		let za = [0x00, 0x80, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38];
+		za = za.concat(utils.hexToBytes(G1.curve.a.toBigInteger().toRadix(16)));
+		za = za.concat(utils.hexToBytes(G1.curve.b.toBigInteger().toRadix(16)));
+		za = za.concat(utils.hexToBytes(G1.getX().toBigInteger().toRadix(16)));
+		za = za.concat(utils.hexToBytes(G1.getY().toBigInteger().toRadix(16)));
+		za = za.concat(utils.hexToBytes('f255d71f573437a0d304e4abb259663c97bb6ce4ddb5803fb7ccfdd195902831')); // FOR TEST, PUB.X
+		// za = za.concat(utils.hexToBytes(priv._key.pubKeyHex.substr(2, 64)));
+		za = za.concat(utils.hexToBytes('3563e8a8f0e654942a2be714d8749380c0259cccc0daf14083c55c16a67bc8ff')); // FOR TEST, PUB.Y
+		// za = za.concat(utils.hexToBytes(priv._key.pubKeyHex.substr(66, 64)));
+		// console.log('## G1.curve.a=', G1.curve.a.toBigInteger().toRadix(16));
+		// console.log('## za=', za);
 
-		const d = new BigInteger(priv._key.prvKeyHex, 16);
+		za = new sm3().sum(za);
+
+		console.log('## zaHash=', utils.hashToBN(za));
+
+		console.log('## hash=', hash);
+		console.log('## hash=', utils.hashToBN(hash));
+		if (typeof hash === 'string') {
+			console.log('## hash type is string.');
+			za = za.concat(utils.strToBytes(hash));
+		} else {
+			console.log('## hash type is byte.');
+			za = za.concat(hash);
+		}
+
+		// console.log('## zaHash2=', utils.hashToBN(za));
+
+		hash = new sm3().sum(za);
+
+		console.log('## hash=', utils.hashToBN(hash));
+
+		// /////////////////////////////
+
+		// const smDigest = new SM3Digest();
+		// const za222 = new SM3Digest().GetZ(G1, priv._key.pubKeyHex);
+		// console.log('## za=', smDigest.GetHex(za).toString());
+		// const zValue = smDigest.GetWords(smDigest.GetHex(za).toString());
+		// console.log('## zValue=', zValue);
+		// const smHash = new Array(smDigest.GetDigestSize());
+		//
+		// let rawData = Buffer.from('test').toString('utf8');
+		// console.log('## rawData=', rawData);
+		//
+		// // var rawData = CryptoJS.enc.Utf8.stringify(hash);
+		// rawData = CryptoJS.enc.Utf8.parse(rawData).toString();
+		// rawData = smDigest.GetWords(rawData);
+		//
+		// smDigest.BlockUpdate(zValue, 0, zValue.length);
+		// smDigest.BlockUpdate(rawData, 0, rawData.length);
+		// smDigest.DoFinal(smHash, 0);
+		// hash = smDigest.GetHex(smHash).toString();
+
+		//const d = new BigInteger(priv._key.prvKeyHex, 16);
+		const d = BigInteger.TEST;
 		const n = this.ecparams['n'];
-		const e = new BigInteger(hash, 16)
+		// const e = new BigInteger(hash, 16);
+		const e = new BigInteger(utils.bytesTohex(hash), 16);
 
 		console.log('hash=', hash);
 		console.log('priv=', priv);
 		console.log('N=', n);
 		console.log('N:', n.toString());
+		console.log('e=', e);
 		console.log('E:', e.toString());
 		console.log('D:', d.toString());
 		const type = 1;
 		// k BigInteger
 		if (type === 1) {
-
 			let k = null;
 			let kp = null;
 			let r = null;
@@ -27127,7 +27173,8 @@ KJUR.crypto.SM3withSM2 = function (params) {
 
 			do {
 				do {
-					k = this.getBigRandom(n);
+					// k = this.getBigRandom(n);
+					k = BigInteger.TEST; // FOR TEST
 					kp = G1.multiply(k);
 					console.log('kp=', kp);
 
@@ -27143,7 +27190,6 @@ KJUR.crypto.SM3withSM2 = function (params) {
 
 				// s
 				s = r.multiply(userD);
-				// s = k.subtract(s).mod(n);
 				s = k.subtract(s);
 				s = da_1_Inv.multiply(s).mod(n);
 			}
@@ -27738,10 +27784,12 @@ SM3Digest.prototype = {
 		console.log('## g.getY()=', g.getY().toBigInteger().toRadix(16));
 
 		console.log('## pubKeyHex=', pubKeyHex);
-        var pxWords = this.GetWords(pubKeyHex.substr(2, 64));	// yulei: get from 2
-		console.log('## pxWords=', pxWords);
-        var pyWords = this.GetWords(pubKeyHex.substr(66, 64));	// yulei: get from 66
-        console.log('## pyWords=', pyWords);
+        // var pxWords = this.GetWords(pubKeyHex.substr(2, 64));	// yulei: get from 2
+		var pxWords = this.GetWords('f255d71f573437a0d304e4abb259663c97bb6ce4ddb5803fb7ccfdd195902831');	// yulei: get from 2
+		console.log('## pxWords=', this.GetHex(pxWords).toString());
+        // var pyWords = this.GetWords(pubKeyHex.substr(66, 64));	// yulei: get from 66
+		var pyWords = this.GetWords('3563e8a8f0e654942a2be714d8749380c0259cccc0daf14083c55c16a67bc8ff');	// yulei: get from 66
+        console.log('## pyWords=', this.GetHex(pyWords).toString());
         this.BlockUpdate(aWords, 0, aWords.length);
         this.BlockUpdate(bWords, 0, bWords.length);
         this.BlockUpdate(gxWords, 0, gxWords.length);
@@ -27750,6 +27798,7 @@ SM3Digest.prototype = {
         this.BlockUpdate(pyWords, 0, pyWords.length);
         var md = new Array(this.GetDigestSize());
         this.DoFinal(md, 0);
+		console.log('## md=', md);
         return md;
     }, GetWords: function (hexStr) {
         var words = [];
