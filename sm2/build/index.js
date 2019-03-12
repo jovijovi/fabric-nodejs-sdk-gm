@@ -27742,10 +27742,12 @@ KJUR.crypto.SM3withSM2 = function (params) {
 	this.sign = function (hash, priv) {
 		console.log('## sign - BEGIN - ####################################################################');
 
+		var curve = SM2; // curve parameter
+
 		// GetZ
-		const G1 = this.ecparams.G;
+		// const G1 = this.ecparams.G;
 		// const G2 = ECPointFp.decodeFromHex(this.ecparams.curve, priv._key.pubKeyHex);
-		console.log('## G1=', G1);
+		// console.log('## G1=', G1);
 		// console.log('## G2=', G2);
 
 		// /////////////////////////////
@@ -27753,16 +27755,25 @@ KJUR.crypto.SM3withSM2 = function (params) {
 		hash = 'test'; // FOR TEST
 
 		let za = [0x00, 0x80, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38];
-		za = za.concat(utils.hexToBytes(G1.curve.a.toBigInteger().toRadix(16)));
-		za = za.concat(utils.hexToBytes(G1.curve.b.toBigInteger().toRadix(16)));
-		za = za.concat(utils.hexToBytes(G1.getX().toBigInteger().toRadix(16)));
-		za = za.concat(utils.hexToBytes(G1.getY().toBigInteger().toRadix(16)));
+		// za = za.concat(utils.hexToBytes(G1.curve.a.toBigInteger().toRadix(16)));
+		// za = za.concat(utils.hexToBytes(G1.curve.b.toBigInteger().toRadix(16)));
+		// za = za.concat(utils.hexToBytes(G1.getX().toBigInteger().toRadix(16)));
+		// za = za.concat(utils.hexToBytes(G1.getY().toBigInteger().toRadix(16)));
+		// za = za.concat(utils.hexToBytes('f255d71f573437a0d304e4abb259663c97bb6ce4ddb5803fb7ccfdd195902831')); // FOR TEST, PUB.X
+		// // za = za.concat(utils.hexToBytes(priv._key.pubKeyHex.substr(2, 64)));
+		// za = za.concat(utils.hexToBytes('3563e8a8f0e654942a2be714d8749380c0259cccc0daf14083c55c16a67bc8ff')); // FOR TEST, PUB.Y
+		// // za = za.concat(utils.hexToBytes(priv._key.pubKeyHex.substr(66, 64)));
+		// // console.log('## G1.curve.a=', G1.curve.a.toBigInteger().toRadix(16));
+		// // console.log('## za=', za);
+
+		za = za.concat(curve.a.fromRed().toArray());
+		za = za.concat(curve.b.fromRed().toArray());
+		za = za.concat(curve.g.getX().toArray());
+		za = za.concat(curve.g.getY().toArray());
+		// za = za.concat(pub.getX().toArray());
 		za = za.concat(utils.hexToBytes('f255d71f573437a0d304e4abb259663c97bb6ce4ddb5803fb7ccfdd195902831')); // FOR TEST, PUB.X
-		// za = za.concat(utils.hexToBytes(priv._key.pubKeyHex.substr(2, 64)));
+		// za = za.concat(pub.getY().toArray());
 		za = za.concat(utils.hexToBytes('3563e8a8f0e654942a2be714d8749380c0259cccc0daf14083c55c16a67bc8ff')); // FOR TEST, PUB.Y
-		// za = za.concat(utils.hexToBytes(priv._key.pubKeyHex.substr(66, 64)));
-		// console.log('## G1.curve.a=', G1.curve.a.toBigInteger().toRadix(16));
-		// console.log('## za=', za);
 
 		za = new sm3().sum(za);
 
@@ -27801,8 +27812,6 @@ KJUR.crypto.SM3withSM2 = function (params) {
 		// console.log('e=', e);
 		// console.log('E:', e.toString());
 		// console.log('D:', d.toString());
-
-		var curve = SM2; // curve parameter
 
 		const type = 1;
 
