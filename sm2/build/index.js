@@ -27766,22 +27766,22 @@ KJUR.crypto.SM3withSM2 = function (params) {
 		console.log('## msg=', utils.hashToBN(msg));
 
 		// need to confirm
-		// msg = new sm3().sum(msg);		// ???
-		// console.log('## digest_1st=', utils.hashToBN(msg));
+		const msgDigest = new sm3().sum([...Buffer.from(Buffer.from(msg).toString('hex'), 'hex')]); // NOTICE: it's interesting
+		console.log('## digest_1st=', Buffer.from(msgDigest).toString('hex'));
 
 		if (typeof msg === 'string') {
 			console.log('## msg type is string.');
-			za = za.concat(utils.strToBytes(msg));
+			za = za.concat(utils.strToBytes(msgDigest));
 		} else {
 			console.log('## msg type is byte.');
-			za = za.concat(msg);
+			za = za.concat(msgDigest);
 		}
 
 		// console.log('## zaHash2=', utils.hashToBN(za));
 
 		const zaDigest = new sm3().sum(za);
 
-		console.log('## za=', utils.hashToBN(za));
+		console.log('## za=', utils.hashToBN(zaDigest));
 
 		let signature = {
 			r: '',
